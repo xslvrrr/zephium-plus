@@ -17,3 +17,7 @@ Rebase conflicts appear only in these files.
 | `crates/zephium-app/src/shell/mod.rs` | `toolbar_band` field, seeded from `ui.toolbar` |
 | `crates/zephium-app/src/shell/bootstrap.rs` | Seeds `metrics.toolbar` on each new Main window |
 | `crates/zephium-app/src/shell/operations.rs` | `ui.toolbar` setting updates all Main windows and relayouts |
+| `frame/src/features/sidebar/components/SidebarHeader.svelte` | Nav buttons extracted to `NavControls` |
+| `frame/src/features/sidebar/index.ts` | Exports `NavControls` |
+| `frame/src/app/browser/Shell.svelte` | (Task 5) Address block moved into `addressBlock` snippet, rendered once in the sidebar or the top `Toolbar`; compact address guarded in top mode |
+| `frame/src/features/sidebar/components/Sidebar.svelte` | `pageControls` is off when `ui.toolbar = top` |

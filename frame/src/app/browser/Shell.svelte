@@ -13,6 +13,7 @@
   import type { TabView } from "$shared/ipc/bindings";
   import { newTabImage } from "$session/newtab-background.svelte";
   import RiceTexture from "./RiceTexture.svelte";
+  import Toolbar from "./Toolbar.svelte";
   import SkyLight from "./SkyLight.svelte";
   import RenderBoundary from "$shared/ui/RenderBoundary";
   import { loadClearSiteData, loadSettings } from "$features/settings";
@@ -138,6 +139,10 @@
   });
   let splitting = $state(false);
   let inWork = $derived(browserPage.currentPage() === "work");
+  // rice fork: in top mode the band holds the one address field; Work keeps
+  // the sidebar's, because the band is not drawn there.
+  let topToolbar = $derived(preferences.value("ui.toolbar") === "top");
+  let toolbarBand = $derived(topToolbar && !inWork);
   // Settings stands beside the rail the way a tool panel does.
   let paneled = $derived(
     toolHost.activeTool() !== null || browserPage.currentPage() === "settings",
@@ -325,6 +330,30 @@
   }
 </script>
 
+{#snippet addressBlock(compact: boolean)}
+        <AddressField {compact}>
+          {#snippet trailing(page)}
+            <UtilityTray
+              label={page === null
+                ? m.utilities()
+                : page.warning
+                  ? m.site_info_label_status({ status: page.warning })
+                  : m.site_info_label()}
+              warning={page?.warning}
+            >
+              {#snippet children(open)}
+                {#snippet siteHead(name: string | null, control?: Snippet)}
+                  <SiteHead {page} label={name}>{@render control?.()}</SiteHead>
+                {/snippet}
+                <BlockerShield {open} head={page ? siteHead : undefined} />
+                <ExtensionsSection />
+                <SiteDetails {page} {open} />
+              {/snippet}
+            </UtilityTray>
+          {/snippet}
+        </AddressField>
+{/snippet}
+
 <!-- The player of a tab playing behind the page in front; its code loads the
      first time there is one. -->
 {#snippet player(
@@ -354,7 +383,7 @@
           {#if browserPage.currentPage() === "settings"}<ModeTabs compact standalone />{/if}
           <div class="rail-search"><SidebarSearch /></div>
         {:else if paneled}<ModeTabs compact standalone />{/if}
-      {:else if compact}<AddressField {compact} /><StoreInstallRail />
+      {:else if compact}{#if !toolbarBand}<AddressField {compact} />{/if}<StoreInstallRail />
       {:else if !incognito && preferences.enabled("work")}<div class="sidebar-head">
           <ModeTabs />
         </div>{/if}
@@ -369,27 +398,7 @@
             whole column, field included; the tray rides the field itself,
             because everything in it acts on the page the field names.
           -->
-            <AddressField {compact}>
-              {#snippet trailing(page)}
-                <UtilityTray
-                  label={page === null
-                    ? m.utilities()
-                    : page.warning
-                      ? m.site_info_label_status({ status: page.warning })
-                      : m.site_info_label()}
-                  warning={page?.warning}
-                >
-                  {#snippet children(open)}
-                    {#snippet siteHead(name: string | null, control?: Snippet)}
-                      <SiteHead {page} label={name}>{@render control?.()}</SiteHead>
-                    {/snippet}
-                    <BlockerShield {open} head={page ? siteHead : undefined} />
-                    <ExtensionsSection />
-                    <SiteDetails {page} {open} />
-                  {/snippet}
-                </UtilityTray>
-              {/snippet}
-            </AddressField>
+            {#if !toolbarBand}{@render addressBlock(compact)}{/if}
             <!-- Work floats its page over the whole window, sidebar included. -->
             {#if !inWork}<SidebarPagePermission />{/if}
 
@@ -488,6 +497,7 @@
       >{/snippet}</Sidebar
   >
   <div class="stage-column">
+    {#if toolbarBand}<Toolbar>{@render addressBlock(false)}</Toolbar>{/if}
     {#if browserPage.navigationFailed()}<div class="navigation-error" role="alert">
         {m.browser_nav_failed()}
       </div>{/if}

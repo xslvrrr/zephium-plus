@@ -1,10 +1,7 @@
 <script lang="ts">
   import * as m from "$shared/i18n/messages";
   import {
-    ArrowLeft02Icon,
-    ArrowRight02Icon,
     EllipsisIcon,
-    Refresh01Icon,
     SidebarLeftIcon,
   } from "@hugeicons/core-free-icons";
   import { tabs } from "$domain/tabs";
@@ -19,6 +16,7 @@
   import { fullscreen } from "$shared/lib/fullscreen.svelte";
   import IconButton from "$shared/ui/IconButton";
   import ModeTabs from "./ModeTabs.svelte";
+  import NavControls from "./NavControls.svelte";
   import SidebarSearch from "./SidebarSearch.svelte";
   import WindowControls from "$shared/ui/WindowControls";
 
@@ -71,13 +69,6 @@
       listed,
       webext.isAvailable(),
     );
-  }
-
-  // Back and Forward hold the pages behind and ahead; a held press or a right
-  // click lists them in a native menu.
-  function openHistoryMenu(forward: boolean, anchor: DOMRect) {
-    const id = tabs.activeId();
-    if (id) void commands.historyMenuPopup(id, forward, anchor.left, anchor.bottom);
   }
 
   let handledCommand = 0;
@@ -155,41 +146,7 @@
         onclick={ontoggle}
       />{/if}<span class="flex-1" aria-hidden="true"></span>
 
-    {#if pageControls}<div
-        class="flex items-center gap-0.5"
-        role="group"
-        aria-label={m.ui_navigation()}
-      >
-        <IconButton
-          icon={ArrowLeft02Icon}
-          label={m.ui_back()}
-          shape="rounded"
-          buttonSize={28}
-          size={16}
-          disabled={active?.can_go_back !== true}
-          onclick={tabs.backActive}
-          onmenu={(anchor) => openHistoryMenu(false, anchor)}
-        />
-        <IconButton
-          icon={ArrowRight02Icon}
-          label={m.ui_forward()}
-          shape="rounded"
-          buttonSize={28}
-          size={16}
-          disabled={active?.can_go_forward !== true}
-          onclick={tabs.forwardActive}
-          onmenu={(anchor) => openHistoryMenu(true, anchor)}
-        />
-        <IconButton
-          icon={Refresh01Icon}
-          label={m.ui_reload()}
-          shape="rounded"
-          buttonSize={28}
-          size={16}
-          disabled={active === undefined}
-          onclick={tabs.reloadActive}
-        />
-      </div>{/if}
+    {#if pageControls}<NavControls />{/if}
 
     {#if !IS_MAC && !IS_WINDOWS}
       <WindowControls />

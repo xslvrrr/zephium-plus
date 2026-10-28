@@ -5,6 +5,7 @@
   import * as motion from "$session/motion.svelte";
   import { surface as browserPage } from "$domain/surface";
   import { tabs } from "$domain/tabs";
+  import { preferences } from "$domain/preferences";
   import * as tools from "$session/tools.svelte";
   import { tick, untrack } from "svelte";
   import {
@@ -490,7 +491,7 @@
       compact={headerCompact}
       launcher={paneled}
       ontoggle={toggleShape}
-      pageControls={!inWork}
+      pageControls={!inWork && preferences.value("ui.toolbar") !== "top"}
     />{/if}
   <div
     bind:this={columns}
