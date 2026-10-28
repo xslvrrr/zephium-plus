@@ -10,6 +10,7 @@ use zephium_app::{Command, Handle};
 
 const FILE: &str = "rice-theme.json";
 const MAX_FILE_BYTES: u64 = 16 * 1024;
+const PROFILE_BUDGET: Duration = Duration::from_secs(60);
 const MAX_TEXTURE_BYTES: u64 = 8 * 1024 * 1024;
 
 #[derive(Debug, Default, Deserialize)]
@@ -30,7 +31,13 @@ fn read(path: &Path) -> Option<RiceTheme> {
         crate::write_diagnostic(format_args!("rice-theme: not a small file, ignored"));
         return None;
     }
-    let text = std::fs::read_to_string(path).ok()?;
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) => {
+            crate::write_diagnostic(format_args!("rice-theme: unreadable, ignored: {error}"));
+            return None;
+        }
+    };
     match serde_json::from_str(&text) {
         Ok(theme) => Some(theme),
         Err(error) => {
@@ -65,29 +72,64 @@ fn set(shell: &Handle, key: &str, value: String) {
     if crate::app_setting(key).as_deref() == Some(value.as_str()) {
         return;
     }
-    shell.dispatch(Command::SetAppSetting {
+    if !shell.dispatch(Command::SetAppSetting {
         key: key.to_owned(),
         value,
-    });
+    }) {
+        crate::write_diagnostic(format_args!(
+            "rice-theme: {key} not applied, shell refused it"
+        ));
+    }
+}
+
+/// The current profile, once the shell is admitted. At launch the shell is
+/// still suspended, so each request may sit queued; ask again until the budget
+/// is spent.
+fn current_profile(shell: &Handle) -> Option<zephium_core::ids::ProfileId> {
+    let deadline = std::time::Instant::now() + PROFILE_BUDGET;
+    loop {
+        let reply = shell.profiles().recv_timeout(Duration::from_secs(8));
+        if let Some(current) = reply.ok().flatten().and_then(|view| view.current) {
+            return zephium_core::ids::ProfileId::parse(&current);
+        }
+        if std::time::Instant::now() >= deadline {
+            return None;
+        }
+    }
 }
 
 fn texture_digest(shell: &Handle, path: &Path) -> Option<String> {
-    let metadata = std::fs::metadata(path).ok()?;
-    if !metadata.is_file() || metadata.len() > MAX_TEXTURE_BYTES {
-        return None;
-    }
-    let bytes = std::fs::read(path).ok()?;
+    let bytes = match std::fs::metadata(path) {
+        Ok(metadata) if metadata.is_file() && metadata.len() <= MAX_TEXTURE_BYTES => {
+            match std::fs::read(path) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    crate::write_diagnostic(format_args!(
+                        "rice-theme: texture unreadable: {error}"
+                    ));
+                    return None;
+                }
+            }
+        }
+        Ok(_) => {
+            crate::write_diagnostic(format_args!("rice-theme: texture is not a file or too big"));
+            return None;
+        }
+        Err(error) => {
+            crate::write_diagnostic(format_args!("rice-theme: texture missing: {error}"));
+            return None;
+        }
+    };
     if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         crate::write_diagnostic(format_args!("rice-theme: texture is not a PNG"));
         return None;
     }
-    let profile = shell
-        .profiles()
-        .recv_timeout(Duration::from_secs(8))
-        .ok()
-        .flatten()?
-        .current?;
-    let profile = zephium_core::ids::ProfileId::parse(&profile)?;
+    let Some(profile) = current_profile(shell) else {
+        crate::write_diagnostic(format_args!(
+            "rice-theme: no profile for the texture in time"
+        ));
+        return None;
+    };
     let receiver = shell.import_media(
         profile,
         zephium_core::resources::MediaImport {
@@ -97,15 +139,26 @@ fn texture_digest(shell: &Handle, path: &Path) -> Option<String> {
             bytes: std::sync::Arc::new(bytes),
         },
     );
-    let reply = receiver.recv_timeout(Duration::from_secs(30)).ok()?;
+    let Ok(reply) = receiver.recv_timeout(Duration::from_secs(30)) else {
+        crate::write_diagnostic(format_args!("rice-theme: texture import timed out"));
+        return None;
+    };
     match reply.response {
         zephium_core::resources::ResourceResponse::Applied { record, .. } => {
             match record.draft.content {
                 zephium_core::resources::ResourceContent::Media { asset } => Some(asset.digest),
-                _ => None,
+                _ => {
+                    crate::write_diagnostic(format_args!(
+                        "rice-theme: texture import was not media"
+                    ));
+                    None
+                }
             }
         }
-        _ => None,
+        _ => {
+            crate::write_diagnostic(format_args!("rice-theme: texture import refused"));
+            None
+        }
     }
 }
 
@@ -153,15 +206,17 @@ pub(crate) fn start(dir: PathBuf, shell: Handle) {
             let path = dir.join(FILE);
             apply(&shell, &path);
             let (sender, events) = std::sync::mpsc::channel();
-            let Ok(mut watcher) = notify::recommended_watcher(sender) else {
-                return;
+            let mut watcher = match notify::recommended_watcher(sender) {
+                Ok(watcher) => watcher,
+                Err(error) => {
+                    crate::write_diagnostic(format_args!("rice-theme: no file watcher: {error}"));
+                    return;
+                }
             };
             use notify::Watcher;
             // The directory, not the file: rice replaces the file by rename.
-            if watcher
-                .watch(&dir, notify::RecursiveMode::NonRecursive)
-                .is_err()
-            {
+            if let Err(error) = watcher.watch(&dir, notify::RecursiveMode::NonRecursive) {
+                crate::write_diagnostic(format_args!("rice-theme: cannot watch {dir:?}: {error}"));
                 return;
             }
             while let Ok(event) = events.recv() {
