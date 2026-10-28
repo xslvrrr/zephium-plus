@@ -12,7 +12,9 @@
   --radius-card: calc(var(--rice-radius) + 6px);
   --radius-panel: calc(var(--rice-radius) + 10px);
 
-  /* Holographic new-tab mark; ramps ported from Trance trance-tokens.css:432-468. */
+  /* Holographic new-tab mark; ramps ported from Trance trance-tokens.css:432-468.
+     Trance tints each stop 10% with its accent-vivid via color-mix; that is
+     intentionally omitted, since Zephium has no accent token. */
   --rice-mark-sheen: repeating-linear-gradient(
     115deg,
     #ffd6e4 0%,
