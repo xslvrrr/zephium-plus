@@ -331,27 +331,27 @@
 </script>
 
 {#snippet addressBlock(compact: boolean)}
-        <AddressField {compact}>
-          {#snippet trailing(page)}
-            <UtilityTray
-              label={page === null
-                ? m.utilities()
-                : page.warning
-                  ? m.site_info_label_status({ status: page.warning })
-                  : m.site_info_label()}
-              warning={page?.warning}
-            >
-              {#snippet children(open)}
-                {#snippet siteHead(name: string | null, control?: Snippet)}
-                  <SiteHead {page} label={name}>{@render control?.()}</SiteHead>
-                {/snippet}
-                <BlockerShield {open} head={page ? siteHead : undefined} />
-                <ExtensionsSection />
-                <SiteDetails {page} {open} />
-              {/snippet}
-            </UtilityTray>
+  <AddressField {compact}>
+    {#snippet trailing(page)}
+      <UtilityTray
+        label={page === null
+          ? m.utilities()
+          : page.warning
+            ? m.site_info_label_status({ status: page.warning })
+            : m.site_info_label()}
+        warning={page?.warning}
+      >
+        {#snippet children(open)}
+          {#snippet siteHead(name: string | null, control?: Snippet)}
+            <SiteHead {page} label={name}>{@render control?.()}</SiteHead>
           {/snippet}
-        </AddressField>
+          <BlockerShield {open} head={page ? siteHead : undefined} />
+          <ExtensionsSection />
+          <SiteDetails {page} {open} />
+        {/snippet}
+      </UtilityTray>
+    {/snippet}
+  </AddressField>
 {/snippet}
 
 <!-- The player of a tab playing behind the page in front; its code loads the
@@ -378,7 +378,7 @@
   <Sidebar
     >{#snippet browserBody(compact)}
       {#if compact && (inWork || paneled)}
-        {#if !inWork}<AddressField {compact} /><StoreInstallRail />{/if}
+        {#if !inWork}{#if !toolbarBand}<AddressField {compact} />{/if}<StoreInstallRail />{/if}
         {#if paneled && IS_WINDOWS}
           {#if browserPage.currentPage() === "settings"}<ModeTabs compact standalone />{/if}
           <div class="rail-search"><SidebarSearch /></div>
