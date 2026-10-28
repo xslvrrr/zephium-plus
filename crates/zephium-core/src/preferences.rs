@@ -67,6 +67,12 @@ pub const KEYS: &[&str] = &[
     "work.favourite-models",
     "zoom.default",
     "privacy.smartscreen",
+    // rice fork
+    "ui.toolbar",
+    "ui.window-controls",
+    "ui.radius",
+    "ui.texture",
+    "ui.texture-opacity",
 ];
 
 /// SmartScreen ships on. Only an explicit persisted false disables the
@@ -210,6 +216,23 @@ pub fn value_allowed(key: &str, value: &str) -> bool {
                         .bytes()
                         .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
         }
+        // rice fork: `mark` is Trance's centred holographic mark alone.
+        "ui.newtab-wordmark" => matches!(value, "true" | "false" | "mark"),
+        "ui.toolbar" => matches!(value, "sidebar" | "top"),
+        "ui.window-controls" => matches!(value, "shown" | "hover"),
+        "ui.radius" => value
+            .parse::<u8>()
+            .is_ok_and(|radius| radius <= 16 && value == radius.to_string()),
+        "ui.texture" => {
+            value.is_empty()
+                || (value.len() == 64
+                    && value
+                        .bytes()
+                        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+        }
+        "ui.texture-opacity" => value
+            .parse::<u8>()
+            .is_ok_and(|opacity| opacity <= 40 && value == opacity.to_string()),
         "ui.newtab-clock-format" => matches!(value, "system" | "12h" | "24h"),
         "ui.tab-layout" => matches!(value, "vertical" | "horizontal"),
         "ui.language" => LANGUAGES.contains(&value),
@@ -304,7 +327,6 @@ pub fn value_allowed(key: &str, value: &str) -> bool {
         | "ui.newtab-clock"
         | "ui.newtab-tasks"
         | "ui.newtab-dim"
-        | "ui.newtab-wordmark"
         | "ui.newtab-trackers"
         | "ui.newtab-focus"
         | "ai.enabled"

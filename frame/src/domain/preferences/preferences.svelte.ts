@@ -67,6 +67,12 @@ const defaults = {
   "work.favourite-models": "",
   "zoom.default": "100",
   "privacy.smartscreen": "true",
+  // rice fork
+  "ui.toolbar": "sidebar",
+  "ui.window-controls": "shown",
+  "ui.radius": "12",
+  "ui.texture": "",
+  "ui.texture-opacity": "15",
 } as const;
 export type PreferenceKey = keyof typeof defaults;
 const values = $state<Record<PreferenceKey, string>>({ ...defaults });
