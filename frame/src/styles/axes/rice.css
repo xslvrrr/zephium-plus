@@ -11,6 +11,28 @@
   --content-radius: var(--rice-radius);
   --radius-card: calc(var(--rice-radius) + 6px);
   --radius-panel: calc(var(--rice-radius) + 10px);
+
+  /* Holographic new-tab mark; ramps ported from Trance trance-tokens.css:432-468. */
+  --rice-mark-sheen: repeating-linear-gradient(
+    115deg,
+    #ffd6e4 0%,
+    #ffe0bd 0.9%,
+    #fff7bf 2.4%,
+    #bff6d4 3.1%,
+    #c1efff 4.9%,
+    #cbd6ff 5.8%,
+    #e5c8ff 7.3%,
+    #ffd1ee 8.2%,
+    #ffd6e4 9.7%
+  );
+  --rice-mark-streak: repeating-linear-gradient(
+    -35deg,
+    transparent 0 2.4%,
+    rgb(255 255 255 / 16%) 3.7%,
+    rgb(255 255 255 / 48%) 4.8%,
+    rgb(255 255 255 / 18%) 5.6%,
+    transparent 7.1% 11.8%
+  );
 }
 
 /* The texture is a fixed, positioned layer at z-index 0. The sidebar is

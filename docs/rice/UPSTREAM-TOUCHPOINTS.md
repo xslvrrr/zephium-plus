@@ -27,3 +27,6 @@ Rebase conflicts appear only in these files.
 | `crates/zephium-engine/src/lib.rs` | (Task 7) `PAGE_RADIUS` static with `set_page_radius` / `page_radius` |
 | `crates/zephium-engine/src/host/construction.rs` | (Task 7) macOS page `configure` reads `crate::page_radius()` instead of `12.0` |
 | `desktop/src/lib.rs` | (Task 7) seeds `ui.radius` after `APP_STORE.set`; `preference.ui.radius=` arm in projection hook |
+| `frame/src/features/newtab/components/NewTab.svelte` | (Task 8) `mark` wordmark mode: renders `RiceMark`, hides greeting, clock and figures |
+| `frame/src/features/settings/components/sections/NewTabPage.svelte` | (Task 8) wordmark Switch becomes a three-way Select |
+| `frame/messages/en.json` | (Task 8) `ntp_wordmark_mark`, `ntp_wordmark_none` |

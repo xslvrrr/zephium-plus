@@ -35,6 +35,7 @@
     type Scene,
   } from "$shared/sky";
   import NewTabAccount from "./NewTabAccount.svelte";
+  import RiceMark from "./RiceMark.svelte";
 
   let {
     search,
@@ -80,7 +81,8 @@
         })
       : null;
   });
-  let showWordmark = $derived(preferences.value("ui.newtab-wordmark") !== "false");
+  let showWordmark = $derived(preferences.value("ui.newtab-wordmark") === "true");
+  let markOnly = $derived(preferences.value("ui.newtab-wordmark") === "mark");
   let showTrackers = $derived(preferences.value("ui.newtab-trackers") !== "false");
   let showGreeting = $derived(preferences.value("ui.newtab-greeting") === "true");
   let showClock = $derived(preferences.value("ui.newtab-clock") === "true");
@@ -183,7 +185,7 @@
   let page = $derived(
     layout(width, height, {
       controls,
-      clock: showClock,
+      clock: showClock && !markOnly,
       wordmark: showWordmark,
     }),
   );
@@ -363,6 +365,7 @@
       <path d={lip} stroke={`url(#${id}-lip)`} />
     </svg>
   {/if}
+  {#if markOnly}<RiceMark />{/if}
 
   <!-- The name, drawn only as large as itself. -->
   {#if showWordmark}<svg class="mark" role="img" aria-label="Zephium" style={at(page.mark)}>
@@ -411,13 +414,13 @@
     {@render search()}
   </div>
 
-  {#if showGreeting}
+  {#if showGreeting && !markOnly}
     <p class="greeting" style:bottom={`${height - page.mark.y + 18}px`}>
       {greeting}
     </p>
   {/if}
 
-  {#if page.when !== null}
+  {#if page.when !== null && !markOnly}
     <p class="when" style:top={`${page.when}px`}>
       <time class="time" datetime={now.toISOString()}
         >{#if face.period !== null && face.periodLeading}<span class="period"
@@ -451,7 +454,7 @@
   <!-- A private window has no figures; what it promises stands in their place. -->
   {#if incognito}
     <p class="note">{m.ntp_private()}</p>
-  {:else if figures.length}
+  {:else if figures.length && !markOnly}
     <!-- The day in figures, along the foot of the page; they step aside
          while a search is open. -->
     <div class="figures">
