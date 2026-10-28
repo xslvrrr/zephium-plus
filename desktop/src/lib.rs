@@ -6527,6 +6527,9 @@ pub fn run() {
                 APP_STORE.set(store.clone()).map_err(|_| {
                     std::io::Error::other("process-global application store is already installed")
                 })?;
+                if let Some(radius) = app_setting("ui.radius").and_then(|value| value.parse::<f64>().ok()) {
+                    zephium_engine::set_page_radius(radius);
+                }
                 for (key, value) in
                     zephium_core::preferences::migrations(|key| store.app_setting(key))
                 {
@@ -6979,6 +6982,11 @@ pub fn run() {
                             let _ = window.run_on_main_thread(move || {
                                 platform::imp::window_controls_set_bare(&target, bare);
                             });
+                        }
+                    }
+                    if let Some(value) = id.strip_prefix("preference.ui.radius=") {
+                        if let Ok(radius) = value.parse::<f64>() {
+                            zephium_engine::set_page_radius(radius);
                         }
                     }
                     if let Some((key, value)) = id.strip_prefix("preference.").and_then(|rest| rest.split_once('=')) {

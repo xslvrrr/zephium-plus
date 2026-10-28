@@ -181,6 +181,22 @@ macro_rules! diagnostic {
 #[cfg(all(target_os = "macos", feature = "native-agentic-work-resource-probe"))]
 pub(crate) use diagnostic;
 
+/// rice fork: the Browse page corner radius in points, stored as f64 bits.
+static PAGE_RADIUS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0x4028_0000_0000_0000); // 12.0
+
+/// rice fork: the corner radius new Browse pages are given.
+pub fn set_page_radius(radius: f64) {
+    if radius.is_finite() && (0.0..=16.0).contains(&radius) {
+        PAGE_RADIUS.store(radius.to_bits(), std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// rice fork: the radius `set_page_radius` last stored.
+pub fn page_radius() -> f64 {
+    f64::from_bits(PAGE_RADIUS.load(std::sync::atomic::Ordering::Relaxed))
+}
+
 /// Runs one bounded macOS native-input matrix on the process main thread.
 ///
 /// This diagnostic API is absent from ordinary and optimized builds. It

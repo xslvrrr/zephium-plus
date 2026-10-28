@@ -24,3 +24,6 @@ Rebase conflicts appear only in these files.
 | `desktop/src/platform/window_controls.rs` | (Task 6) `bare` ivar skips resting discs; `set_bare` |
 | `desktop/src/platform/macos.rs` | (Task 6) applies `ui.window-controls` at install; `window_controls_set_bare` wrapper |
 | `desktop/src/lib.rs` | (Task 6) `preference.ui.window-controls=` arm in projection hook |
+| `crates/zephium-engine/src/lib.rs` | (Task 7) `PAGE_RADIUS` static with `set_page_radius` / `page_radius` |
+| `crates/zephium-engine/src/host/construction.rs` | (Task 7) macOS page `configure` reads `crate::page_radius()` instead of `12.0` |
+| `desktop/src/lib.rs` | (Task 7) seeds `ui.radius` after `APP_STORE.set`; `preference.ui.radius=` arm in projection hook |

@@ -2139,7 +2139,7 @@ impl EngineHost {
         #[cfg(target_os = "macos")]
         if let Err(error) = crate::platform::imp::configure(
             &view,
-            12.0,
+            crate::page_radius(),
             partition,
             expected_ephemeral_data_store.as_ref(),
         ) {
