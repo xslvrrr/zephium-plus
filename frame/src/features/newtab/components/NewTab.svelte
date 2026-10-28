@@ -39,6 +39,7 @@
 
   let {
     search,
+    texture,
     oncustomize,
     onaccount,
     ontasks,
@@ -46,6 +47,8 @@
   }: {
     /** The field that hangs in the notch. */
     search: Snippet;
+    /** rice fork: drawn over the page's ground, under everything on it. */
+    texture?: Snippet;
     /** Opens this page's settings. */
     oncustomize?: () => void;
     /** Opens the account in Settings, or straight onto buying credits. */
@@ -178,15 +181,21 @@
       live = false;
     };
   });
-  let controls = $derived([
-    ...(showAccount ? [account.signedIn ? 32 : Math.max(32, signInWidth)] : []),
-    ...(oncustomize ? [32] : []),
-  ]);
+  // rice fork: the mark stands alone, so it has no field and no controls.
+  let controls = $derived(
+    markOnly
+      ? []
+      : [
+          ...(showAccount ? [account.signedIn ? 32 : Math.max(32, signInWidth)] : []),
+          ...(oncustomize ? [32] : []),
+        ],
+  );
   let page = $derived(
     layout(width, height, {
       controls,
       clock: showClock && !markOnly,
       wordmark: showWordmark,
+      notched: !markOnly,
     }),
   );
   const at = ({ x, y, w, h }: Box) => `left:${x}px;top:${y}px;width:${w}px;height:${h}px`;
@@ -351,6 +360,7 @@
           style:background-size={`${sky.w}px ${sky.h}px`}
           style:background-position={`${sky.x}px ${sky.y}px`}
         ></div>{/if}
+      {@render texture?.()}
     </div>{/if}
 
   <!-- Light caught along the edge where the page meets the window, fading
@@ -410,9 +420,13 @@
     style:height={`${page.notch.height}px`}
   ></div>
 
-  <div class="field" style:width={`${fieldWidth}px`} style:height={`${page.notch.height}px`}>
-    {@render search()}
-  </div>
+  {#if !markOnly}<div
+      class="field"
+      style:width={`${fieldWidth}px`}
+      style:height={`${page.notch.height}px`}
+    >
+      {@render search()}
+    </div>{/if}
 
   {#if showGreeting && !markOnly}
     <p class="greeting" style:bottom={`${height - page.mark.y + 18}px`}>
@@ -433,12 +447,12 @@
   {/if}
 
   <!-- Each control a disc of light on the sky, level with the field. -->
-  {#if showAccount && onaccount && page.controls[0]}
+  {#if showAccount && onaccount && !markOnly && page.controls[0]}
     <div class="control" style={at(page.controls[0])}>
       <NewTabAccount {account} {onaccount} bind:signInWidth />
     </div>
   {/if}
-  {#if oncustomize && page.controls.at(-1)}
+  {#if oncustomize && !markOnly && page.controls.at(-1)}
     <div class="control" style={at(page.controls.at(-1)!)}>
       <IconButton
         icon={Settings01Icon}

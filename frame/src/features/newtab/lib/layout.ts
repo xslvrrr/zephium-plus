@@ -39,13 +39,17 @@ export function layout(
     controls,
     clock,
     wordmark = true,
-  }: { controls: readonly number[]; clock: boolean; wordmark?: boolean },
+    notched = true,
+  }: { controls: readonly number[]; clock: boolean; wordmark?: boolean; notched?: boolean },
 ): Layout {
   // Both top corners stay clear of the notch's flare for the controls in
   // one of them, so the field stays in the middle however wide they are.
   const reach = controls.reduce((sum, w) => sum + w + CONTROL.gap, CONTROL.inset - CONTROL.gap);
   const corner = Math.max(CORNER, reach + CORNER - TWO_ROUND);
-  const notch = { ...NOTCH, width: Math.min(NOTCH.width, width - 2 * corner) };
+  // rice fork: a page with no field cuts no notch, so nothing waits for one.
+  const notch = notched
+    ? { ...NOTCH, width: Math.min(NOTCH.width, width - 2 * corner) }
+    : { ...NOTCH, width: 0, height: 0 };
 
   const buttonY = Math.round((NOTCH.height - CONTROL.size) / 2);
   let right = width - CONTROL.inset;

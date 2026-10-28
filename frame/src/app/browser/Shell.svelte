@@ -562,7 +562,7 @@
                 onaccount={openAccount}
                 ontasks={() => void browserPage.open("tasks")}
                 ontime={() => void browserPage.open("time")}
-                >{#snippet search()}{#key tabs.activeId()}<LazyView
+                >{#snippet texture()}<RiceTexture fill="page" />{/snippet}{#snippet search()}{#key tabs.activeId()}<LazyView
                       loader={loadNewTabSearch}
                       loadingLabel={m.surface_loading()}
                       failureLabel={m.surface_render_failed()}

@@ -32,3 +32,6 @@ Rebase conflicts appear only in these files.
 | `frame/messages/en.json` | (Task 8) `ntp_wordmark_mark`, `ntp_wordmark_none` |
 | `desktop/src/lib.rs` | (Task 9) `mod rice_theme;` and `rice_theme::start(data_dir, shell)` after `external_links::adopt` |
 | `desktop/Cargo.toml` | (Task 9) `notify = =8.2.0` (macos_fsevent), same pin as zephium-notes |
+| `frame/src/app/browser/Shell.svelte` | (Task 11) Passes `<RiceTexture fill="page" />` to NewTab as its `texture` snippet |
+| `frame/src/features/newtab/components/NewTab.svelte` | (Task 11) `texture` snippet drawn over the page's ground; `mark` mode drops the notch field, account and customize controls |
+| `frame/src/features/newtab/lib/layout.ts` | (Task 11) `notched` option: a page without its field cuts no notch |

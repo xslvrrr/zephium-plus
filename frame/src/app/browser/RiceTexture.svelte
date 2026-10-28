@@ -2,6 +2,9 @@
   import { preferences } from "$domain/preferences";
   import { tabs } from "$domain/tabs";
 
+  // The window's chrome ground, or the ground of one page laid over it.
+  let { fill = "window" }: { fill?: "window" | "page" } = $props();
+
   // One bounded decode at the window's own scale; never re-requested on resize.
   const width = Math.min(1600, Math.ceil(window.screen.width * window.devicePixelRatio));
   let src = $state<string | null>(null);
@@ -28,6 +31,7 @@
 {#if src && failed !== src}
   <img
     class="rice-texture"
+    class:page={fill === "page"}
     {src}
     alt=""
     aria-hidden="true"
@@ -49,6 +53,12 @@
     /* Under the chrome's own controls, over its ground. */
     z-index: 0;
     mix-blend-mode: normal;
+  }
+
+  /* Inside a page's ground: it fills that ground and stays clipped to it. */
+  .rice-texture.page {
+    position: absolute;
+    z-index: auto;
   }
 
   @media (forced-colors: active) {
