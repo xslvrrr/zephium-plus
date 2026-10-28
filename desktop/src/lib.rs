@@ -6971,6 +6971,16 @@ pub fn run() {
                     if let Some(value) = id.strip_prefix("preference.ui.material=") {
                         apply_native_material(&emit_handle, value);
                     }
+                    #[cfg(target_os = "macos")]
+                    if let Some(value) = id.strip_prefix("preference.ui.window-controls=") {
+                        let bare = value == "hover";
+                        if let Some(window) = emit_handle.get_webview_window(MAIN_LABEL) {
+                            let target = window.clone();
+                            let _ = window.run_on_main_thread(move || {
+                                platform::imp::window_controls_set_bare(&target, bare);
+                            });
+                        }
+                    }
                     if let Some((key, value)) = id.strip_prefix("preference.").and_then(|rest| rest.split_once('=')) {
                         page_assist::preference_changed(key, value);
                         if material::theme_changed(key, value) {

@@ -21,3 +21,6 @@ Rebase conflicts appear only in these files.
 | `frame/src/features/sidebar/index.ts` | Exports `NavControls` |
 | `frame/src/app/browser/Shell.svelte` | (Task 5) Address block moved into `addressBlock` snippet, rendered once in the sidebar or the top `Toolbar`; compact address guarded in top mode |
 | `frame/src/features/sidebar/components/Sidebar.svelte` | `pageControls` is off when `ui.toolbar = top` |
+| `desktop/src/platform/window_controls.rs` | (Task 6) `bare` ivar skips resting discs; `set_bare` |
+| `desktop/src/platform/macos.rs` | (Task 6) applies `ui.window-controls` at install; `window_controls_set_bare` wrapper |
+| `desktop/src/lib.rs` | (Task 6) `preference.ui.window-controls=` arm in projection hook |

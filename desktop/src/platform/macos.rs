@@ -100,6 +100,11 @@ struct PrivilegedDelegateState {
     _delegate: Retained<PrivilegedUIDelegate>,
 }
 
+/// rice fork: follows `ui.window-controls` live.
+pub fn window_controls_set_bare(window: &WebviewWindow, bare: bool) {
+    super::window_controls::set_bare(window, bare);
+}
+
 thread_local! {
     // Objective-C UI objects stay owned and dropped on the main thread. The
     // published generation lets queued cross-thread layout work reject a
@@ -275,6 +280,10 @@ pub fn to_window(x: f64, y: f64) -> (f64, f64) {
 pub fn init(window: &WebviewWindow) -> bool {
     crate::material::install(window, false);
     super::window_controls::install(window);
+    super::window_controls::set_bare(
+        window,
+        crate::app_setting("ui.window-controls").as_deref() == Some("hover"),
+    );
     if !harden_privileged(window) {
         return false;
     }

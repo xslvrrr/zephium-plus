@@ -66,6 +66,8 @@ pub struct Ivars {
     /// Full screen hands the controls to the menu-bar reveal, where they must
     /// be visible the moment it slides down.
     suspended: Cell<bool>,
+    /// rice fork: rest as nothing at all rather than as unlit discs.
+    bare: Cell<bool>,
     observers: RefCell<Vec<Retained<ProtocolObject<dyn NSObjectProtocol>>>>,
     /// The browser window's chrome, told the moment fullscreen begins or
     /// ends so the room it keeps for the controls follows them at once.
@@ -99,7 +101,7 @@ define_class!(
 
         #[unsafe(method(drawRect:))]
         fn draw_rect(&self, _dirty: NSRect) {
-            if self.ivars().suspended.get() {
+            if self.ivars().suspended.get() || self.ivars().bare.get() {
                 return;
             }
             let (white, alpha) = if self.is_dark() { REST_DARK } else { REST_LIGHT };
@@ -162,6 +164,7 @@ impl WindowControls {
             lit: Cell::new(false),
             settled: Cell::new(false),
             suspended: Cell::new(false),
+            bare: Cell::new(false),
             observers: RefCell::new(Vec::new()),
             chrome: RefCell::new(None),
         });
@@ -512,6 +515,35 @@ pub fn set_tucked(window: &WebviewWindow, tucked: bool) {
             }
         }
     }
+}
+
+/// rice fork: whether the resting discs are drawn. Hovering still lights the
+/// real buttons, so the controls stay reachable and accessible.
+pub fn set_bare(window: &WebviewWindow, bare: bool) {
+    if MainThreadMarker::new().is_none() {
+        return;
+    }
+    let Ok(pointer) = window.ns_window() else {
+        return;
+    };
+    // SAFETY: Tao's live NSWindow, borrowed for this main-thread call only.
+    let ns_window = unsafe { &*(pointer as *const NSWindow) };
+    let Some(close) = ns_window.standardWindowButton(NSWindowButton::CloseButton) else {
+        return;
+    };
+    // SAFETY: a main-thread read of the live close button's parent.
+    let Some(parent) = (unsafe { close.superview() }) else {
+        return;
+    };
+    let Some(controls) = parent
+        .subviews()
+        .iter()
+        .find_map(|view| view.downcast_ref::<WindowControls>().map(|c| c.retain()))
+    else {
+        return;
+    };
+    controls.ivars().bare.set(bare);
+    controls.setNeedsDisplay(true);
 }
 
 const TUCK_SECONDS: f64 = 0.22;
