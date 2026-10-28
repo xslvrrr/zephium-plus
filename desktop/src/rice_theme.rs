@@ -1,0 +1,182 @@
+//! rice fork: `rice-theme.json` beside the store, written by `rice theme
+//! apply`. Each field present is applied as a preference at launch and on
+//! every change of the file; a field left out leaves its preference alone.
+//! A malformed file is logged and ignored whole.
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use serde::Deserialize;
+use zephium_app::{Command, Handle};
+
+const FILE: &str = "rice-theme.json";
+const MAX_FILE_BYTES: u64 = 16 * 1024;
+const MAX_TEXTURE_BYTES: u64 = 8 * 1024 * 1024;
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RiceTheme {
+    accent: Option<String>,
+    texture: Option<PathBuf>,
+    texture_opacity: Option<u8>,
+    radius: Option<u8>,
+    toolbar: Option<String>,
+    window_controls: Option<String>,
+    newtab_mark: Option<bool>,
+}
+
+fn read(path: &Path) -> Option<RiceTheme> {
+    let metadata = std::fs::metadata(path).ok()?;
+    if !metadata.is_file() || metadata.len() > MAX_FILE_BYTES {
+        crate::write_diagnostic(format_args!("rice-theme: not a small file, ignored"));
+        return None;
+    }
+    let text = std::fs::read_to_string(path).ok()?;
+    match serde_json::from_str(&text) {
+        Ok(theme) => Some(theme),
+        Err(error) => {
+            crate::write_diagnostic(format_args!("rice-theme: malformed, ignored: {error}"));
+            None
+        }
+    }
+}
+
+/// `#rrggbb` to the custom theme the core accepts, built from the stored
+/// theme so only its accent changes.
+fn accent_theme(hex: &str) -> Option<(String, String)> {
+    let hex = hex.strip_prefix('#')?;
+    if hex.len() != 6 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let channel = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).ok();
+    let rgb = [channel(0)?, channel(2)?, channel(4)?];
+    let theme =
+        crate::app_setting("ui.theme").unwrap_or_else(|| zephium_core::theme::DEFAULT.to_owned());
+    let custom = crate::app_setting("ui.theme-custom");
+    // One accent for both appearances: rice is monochrome and dark-first.
+    let carried = zephium_core::theme::with_accent(&theme, custom.as_deref(), (rgb, rgb))?;
+    Some((zephium_core::theme::CUSTOM.to_owned(), carried))
+}
+
+fn set(shell: &Handle, key: &str, value: String) {
+    if !zephium_core::preferences::value_allowed(key, &value) {
+        crate::write_diagnostic(format_args!("rice-theme: {key} refused"));
+        return;
+    }
+    if crate::app_setting(key).as_deref() == Some(value.as_str()) {
+        return;
+    }
+    shell.dispatch(Command::SetAppSetting {
+        key: key.to_owned(),
+        value,
+    });
+}
+
+fn texture_digest(shell: &Handle, path: &Path) -> Option<String> {
+    let metadata = std::fs::metadata(path).ok()?;
+    if !metadata.is_file() || metadata.len() > MAX_TEXTURE_BYTES {
+        return None;
+    }
+    let bytes = std::fs::read(path).ok()?;
+    if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        crate::write_diagnostic(format_args!("rice-theme: texture is not a PNG"));
+        return None;
+    }
+    let profile = shell
+        .profiles()
+        .recv_timeout(Duration::from_secs(8))
+        .ok()
+        .flatten()?
+        .current?;
+    let profile = zephium_core::ids::ProfileId::parse(&profile)?;
+    let receiver = shell.import_media(
+        profile,
+        zephium_core::resources::MediaImport {
+            request_id: format!("rice-texture-{}", zephium_core::ids::ResourceId::generate()),
+            name: "rice-texture.png".into(),
+            origin: zephium_core::resources::MediaOrigin::Imported,
+            bytes: std::sync::Arc::new(bytes),
+        },
+    );
+    let reply = receiver.recv_timeout(Duration::from_secs(30)).ok()?;
+    match reply.response {
+        zephium_core::resources::ResourceResponse::Applied { record, .. } => {
+            match record.draft.content {
+                zephium_core::resources::ResourceContent::Media { asset } => Some(asset.digest),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+fn apply(shell: &Handle, path: &Path) {
+    let Some(theme) = read(path) else {
+        return;
+    };
+    if let Some((name, custom)) = theme.accent.as_deref().and_then(accent_theme) {
+        set(shell, "ui.theme-custom", custom);
+        set(shell, "ui.theme", name);
+    }
+    if let Some(opacity) = theme.texture_opacity {
+        set(shell, "ui.texture-opacity", opacity.to_string());
+    }
+    if let Some(radius) = theme.radius {
+        set(shell, "ui.radius", radius.to_string());
+    }
+    if let Some(toolbar) = theme.toolbar {
+        set(shell, "ui.toolbar", toolbar);
+    }
+    if let Some(controls) = theme.window_controls {
+        set(shell, "ui.window-controls", controls);
+    }
+    if let Some(mark) = theme.newtab_mark {
+        set(
+            shell,
+            "ui.newtab-wordmark",
+            if mark { "mark" } else { "true" }.to_owned(),
+        );
+    }
+    if let Some(texture) = theme.texture.as_deref() {
+        // Re-admitting identical bytes yields the same digest, so an
+        // unchanged texture writes nothing.
+        if let Some(digest) = texture_digest(shell, texture) {
+            set(shell, "ui.texture", digest);
+        }
+    }
+}
+
+/// Applies the file once and then on each change, off the main thread.
+pub(crate) fn start(dir: PathBuf, shell: Handle) {
+    std::thread::Builder::new()
+        .name("rice-theme".into())
+        .spawn(move || {
+            let path = dir.join(FILE);
+            apply(&shell, &path);
+            let (sender, events) = std::sync::mpsc::channel();
+            let Ok(mut watcher) = notify::recommended_watcher(sender) else {
+                return;
+            };
+            use notify::Watcher;
+            // The directory, not the file: rice replaces the file by rename.
+            if watcher
+                .watch(&dir, notify::RecursiveMode::NonRecursive)
+                .is_err()
+            {
+                return;
+            }
+            while let Ok(event) = events.recv() {
+                let Ok(event) = event else { continue };
+                if event
+                    .paths
+                    .iter()
+                    .any(|p| p.file_name() == Some(FILE.as_ref()))
+                {
+                    // Let a burst of writes from one apply settle first.
+                    std::thread::sleep(Duration::from_millis(150));
+                    while events.try_recv().is_ok() {}
+                    apply(&shell, &path);
+                }
+            }
+        })
+        .ok();
+}

@@ -30,3 +30,5 @@ Rebase conflicts appear only in these files.
 | `frame/src/features/newtab/components/NewTab.svelte` | (Task 8) `mark` wordmark mode: renders `RiceMark`, hides greeting, clock and figures |
 | `frame/src/features/settings/components/sections/NewTabPage.svelte` | (Task 8) wordmark Switch becomes a three-way Select |
 | `frame/messages/en.json` | (Task 8) `ntp_wordmark_mark`, `ntp_wordmark_none` |
+| `desktop/src/lib.rs` | (Task 9) `mod rice_theme;` and `rice_theme::start(data_dir, shell)` after `external_links::adopt` |
+| `desktop/Cargo.toml` | (Task 9) `notify = =8.2.0` (macos_fsevent), same pin as zephium-notes |

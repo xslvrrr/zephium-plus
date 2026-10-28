@@ -116,6 +116,7 @@ mod recently_closed;
 #[cfg(any(target_os = "macos", target_os = "windows", test))]
 mod renderer_recovery;
 mod resource_close;
+mod rice_theme;
 mod search_providers;
 mod spaces;
 mod startup_alert;
@@ -7167,6 +7168,7 @@ pub fn run() {
             page_assist::install(app.handle(), engine.clone(), store.clone());
             notes::install(app.handle(), &data_dir, store.clone(), &shell);
             external_links::adopt(app.handle());
+            rice_theme::start(data_dir.clone(), shell.clone());
             #[cfg(feature = "work-product")]
             favicon_probe::install(&shell);
             let web_extensions = webext::WebExtensions::new(&data_dir);
