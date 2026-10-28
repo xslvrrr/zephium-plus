@@ -1,0 +1,21 @@
+/* rice fork. Tokens the rice preferences resolve to. Components read the
+   semantic radius tokens, never these names directly. */
+:root {
+  --rice-radius: 12px;
+  --rice-texture-opacity: 0.15;
+
+  /* One radius drives the page frame and the cards around it, so the content
+     view's native corner (set to the same value natively) and the chrome
+     around it never disagree. */
+  --content-radius: var(--rice-radius);
+  --radius-card: calc(var(--rice-radius) + 6px);
+  --radius-panel: calc(var(--rice-radius) + 10px);
+}
+
+/* The texture is a fixed, positioned layer at z-index 0. The sidebar is
+   already positioned and later in tree order, so it paints above it; the stage
+   column is not, so lift it. */
+:root .stage-column {
+  position: relative;
+  z-index: 1;
+}

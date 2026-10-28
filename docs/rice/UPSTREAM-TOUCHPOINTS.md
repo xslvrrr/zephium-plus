@@ -8,3 +8,7 @@ Rebase conflicts appear only in these files.
 | `desktop/src/updates.rs` | `SUPPORTED = false`: the fork never self-updates |
 | `crates/zephium-core/src/preferences.rs` | Rice preference keys (`ui.toolbar`, `ui.window-controls`, `ui.radius`, `ui.texture`, `ui.texture-opacity`) and `ui.newtab-wordmark` `mark` value |
 | `frame/src/domain/preferences/preferences.svelte.ts` | Frame defaults for the rice preference keys |
+| `frame/src/styles/global.css` | One `@import` of `axes/rice.css` after the last axis import |
+| `frame/src/domain/appearance/theme.ts` | `applyRice`: `data-toolbar`, `--rice-radius`, `--rice-texture-opacity` |
+| `frame/src/app/browser/BrowserApp.svelte` | One `$effect` calling `theme.applyRice` from the rice preferences |
+| `frame/src/app/browser/Shell.svelte` | Imports and renders `<RiceTexture />` next to `<SkyLight>` |

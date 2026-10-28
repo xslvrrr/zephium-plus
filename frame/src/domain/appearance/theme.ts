@@ -122,6 +122,18 @@ export function applyLayout(axes: { density: "compact" | "comfortable"; contrast
   document.documentElement.setAttribute("data-contrast", String(axes.contrast));
 }
 
+/** rice fork: the toolbar's place, the shared radius and the texture's strength. */
+export function applyRice(axes: {
+  toolbar: "sidebar" | "top";
+  radius: number;
+  textureOpacity: number;
+}) {
+  const root = document.documentElement;
+  root.setAttribute("data-toolbar", axes.toolbar);
+  root.style.setProperty("--rice-radius", `${axes.radius}px`);
+  root.style.setProperty("--rice-texture-opacity", String(axes.textureOpacity / 100));
+}
+
 function apply() {
   const light = appearance === "light" || (appearance === "system" && media.matches);
   document.documentElement.setAttribute("data-theme", light ? "light" : "dark");

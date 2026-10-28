@@ -88,6 +88,16 @@
     });
   });
 
+  $effect(() => {
+    const radius = Number.parseInt(preferences.value("ui.radius"), 10);
+    const opacity = Number.parseInt(preferences.value("ui.texture-opacity"), 10);
+    theme.applyRice({
+      toolbar: preferences.value("ui.toolbar") === "top" ? "top" : "sidebar",
+      radius: Number.isFinite(radius) ? radius : 12,
+      textureOpacity: Number.isFinite(opacity) ? opacity : 15,
+    });
+  });
+
   // A prompt in the sidebar leaves the page and chrome usable; only the
   // sheet, shown without that column, holds the window.
   let pagePermissionSheet = $derived(

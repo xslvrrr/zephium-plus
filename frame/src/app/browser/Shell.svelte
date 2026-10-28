@@ -12,6 +12,7 @@
   import LazyView from "$shared/ui/LazyView";
   import type { TabView } from "$shared/ipc/bindings";
   import { newTabImage } from "$session/newtab-background.svelte";
+  import RiceTexture from "./RiceTexture.svelte";
   import SkyLight from "./SkyLight.svelte";
   import RenderBoundary from "$shared/ui/RenderBoundary";
   import { loadClearSiteData, loadSettings } from "$features/settings";
@@ -344,6 +345,7 @@
   data-private={incognito || undefined}
 >
   {#if !newTabImage()}<SkyLight shown={skyShown} />{/if}
+  <RiceTexture />
   <Sidebar
     >{#snippet browserBody(compact)}
       {#if compact && (inWork || paneled)}
