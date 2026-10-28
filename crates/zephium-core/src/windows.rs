@@ -85,4 +85,9 @@ impl Windows {
     pub fn iter(&self) -> impl Iterator<Item = &Window> {
         self.order.iter().filter_map(|id| self.map.get(id))
     }
+
+    /// Every logical window, for a change that applies to all of them.
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Window> {
+        self.map.values_mut()
+    }
 }

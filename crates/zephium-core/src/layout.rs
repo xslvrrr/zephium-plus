@@ -17,6 +17,9 @@ pub struct Metrics {
     pub gap: f64,
     /// Optional reserved title band. Native overlay controls reserve no space.
     pub caption: f64,
+    /// rice fork: the top toolbar band above the page. With it, the chrome
+    /// spans the window so the band can run across the top of the content.
+    pub toolbar: f64,
     /// The column is put away until the pointer asks for it.
     pub sidebar_hidden: bool,
 }
@@ -28,6 +31,7 @@ impl Default for Metrics {
             padding: 8.0,
             gap: 8.0,
             caption: 0.0,
+            toolbar: 0.0,
             sidebar_hidden: false,
         }
     }
@@ -40,6 +44,8 @@ impl Default for Metrics {
 /// again in the privileged IPC guard, which let the rail pass the boundary
 /// check and then get silently widened back by the actor, so the chrome and
 /// the content region disagreed about where the sidebar ended.
+/// rice fork: the top toolbar band's height, matching `--rice-toolbar-height`.
+pub const TOOLBAR_BAND: f64 = 44.0;
 pub const MIN_SIDEBAR_WIDTH: f64 = 56.0;
 pub const MAX_SIDEBAR_WIDTH: f64 = 460.0;
 
@@ -140,7 +146,11 @@ fn sidebar(win: Size, m: Metrics, content_present: bool) -> Layout {
 
     // Hidden, the column keeps its width beneath the page, so it can come
     // over it without laying out again, and the page starts at the gutter.
-    let chrome_width = if m.sidebar_hidden {
+    let chrome_width = if m.toolbar > 0.0 {
+        // rice fork: the band runs over the content column, so the chrome
+        // spans the window. The page view stacks above it inside its rect.
+        win.width
+    } else if m.sidebar_hidden {
         (p + m.sidebar_width + HIDDEN_SHADOW_REACH).min(win.width)
     } else {
         p + m.sidebar_width
@@ -151,11 +161,12 @@ fn sidebar(win: Size, m: Metrics, content_present: bool) -> Layout {
     } else {
         p + m.sidebar_width + m.gap
     };
+    let top = m.caption + m.toolbar;
     let content = Rect::new(
         content_x,
-        p + m.caption,
+        p + top,
         win.width - content_x - p,
-        inner_h - m.caption,
+        inner_h - top,
     );
     Layout {
         chrome,
@@ -182,6 +193,7 @@ mod tests {
         padding: 8.0,
         gap: 8.0,
         caption: 0.0,
+        toolbar: 0.0,
         sidebar_hidden: false,
     };
 

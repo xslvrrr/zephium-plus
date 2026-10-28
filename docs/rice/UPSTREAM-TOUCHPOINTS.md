@@ -12,3 +12,8 @@ Rebase conflicts appear only in these files.
 | `frame/src/domain/appearance/theme.ts` | `applyRice`: `data-toolbar`, `--rice-radius`, `--rice-texture-opacity` |
 | `frame/src/app/browser/BrowserApp.svelte` | One `$effect` calling `theme.applyRice` from the rice preferences |
 | `frame/src/app/browser/Shell.svelte` | Imports and renders `<RiceTexture />` next to `<SkyLight>` |
+| `crates/zephium-core/src/layout.rs` | `Metrics.toolbar`, `TOOLBAR_BAND`, and `sidebar()` reserving the band above the page |
+| `crates/zephium-core/src/windows.rs` | `Windows::iter_mut` |
+| `crates/zephium-app/src/shell/mod.rs` | `toolbar_band` field, seeded from `ui.toolbar` |
+| `crates/zephium-app/src/shell/bootstrap.rs` | Seeds `metrics.toolbar` on each new Main window |
+| `crates/zephium-app/src/shell/operations.rs` | `ui.toolbar` setting updates all Main windows and relayouts |

@@ -894,6 +894,19 @@ impl Shell {
             self.search.include_history = value == "true";
         }
         self.tab_preferences.apply(&key, &value);
+        if key == "ui.toolbar" {
+            self.toolbar_band = if value == "top" {
+                zephium_core::layout::TOOLBAR_BAND
+            } else {
+                0.0
+            };
+            for win in self.windows.iter_mut() {
+                if matches!(win.kind, zephium_core::windows::WindowKind::Main) {
+                    win.metrics.toolbar = self.toolbar_band;
+                }
+            }
+            let _ = self.relayout();
+        }
         if self.proxy.apply(&key, &value) {
             self.engine.set_proxy(self.proxy.server());
         }
