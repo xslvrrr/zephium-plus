@@ -12,6 +12,10 @@ pub use socket::McpServer;
 /// The deadline every tool call runs under.
 pub const CALL_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
 
+/// How long a client's admission prompt waits for the person. A prompt that
+/// times out refuses that call and is asked again on the next one.
+pub const ADMIT_DEADLINE: std::time::Duration = std::time::Duration::from_secs(120);
+
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 #[derive(Clone, Debug)]
@@ -103,6 +107,7 @@ pub trait Backend: Send + Sync + 'static {
     fn admit<'a>(&'a self, client: &'a str) -> BoxFuture<'a, bool>;
     /// The names of the clients connected now, after each connect and disconnect.
     fn connected(&self, clients: &[String]);
-    /// One row per tool call. `outcome` is `ok`, `refused`, `timeout` or `error`.
+    /// One row per tool call. `outcome` is `ok`, `refused`, `timeout`, `error`,
+    /// or `cancelled` (the client cancelled the call or the server stopped).
     fn audit(&self, client: &str, tool: &str, tab: Option<&str>, outcome: &str);
 }

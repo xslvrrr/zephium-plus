@@ -8,7 +8,7 @@ use rmcp::{ErrorData, RoleServer, ServerHandler};
 use serde_json::{json, Value};
 use tokio::sync::OnceCell;
 
-use crate::{tools, Backend, Refusal, CALL_DEADLINE};
+use crate::{tools, Backend, Refusal, ADMIT_DEADLINE, CALL_DEADLINE};
 
 pub(crate) struct Handler {
     backend: Arc<dyn Backend>,
@@ -58,6 +58,10 @@ fn refused(refusal: Refusal) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(refusal.message())])
 }
 
+fn cancelled() -> CallToolResult {
+    CallToolResult::error(vec![ContentBlock::text("The call was cancelled.")])
+}
+
 fn json_result(value: Value) -> CallToolResult {
     CallToolResult::success(vec![ContentBlock::text(value.to_string())])
 }
@@ -100,17 +104,39 @@ impl ServerHandler for Handler {
         let args = request.arguments.unwrap_or_default();
         let tab = args.get("tab").and_then(Value::as_str).map(str::to_owned);
         let backend = self.backend.clone();
-        let admitted = *self
-            .admitted
-            .get_or_init(|| async { backend.admit(&client).await })
-            .await;
-        if !admitted {
-            self.backend
-                .audit(&client, &name, tab.as_deref(), "refused");
-            return Ok(refused(Refusal::Denied).into());
+        // An explicit Allow or Deny is kept for the connection; a prompt that
+        // times out is not, so the next call asks again.
+        let admission = self.admitted.get_or_try_init(|| async {
+            tokio::time::timeout(ADMIT_DEADLINE, backend.admit(&client))
+                .await
+                .map_err(|_| ())
+        });
+        // rmcp only signals `ct` on a client cancel or a stop; it never aborts
+        // the request, so every wait races it and drops the future on cancel.
+        let admitted = tokio::select! {
+            _ = context.ct.cancelled() => {
+                self.backend.audit(&client, &name, tab.as_deref(), "cancelled");
+                return Ok(cancelled().into());
+            }
+            admitted = admission => admitted.copied(),
+        };
+        match admitted {
+            Ok(true) => {}
+            Ok(false) => {
+                self.backend
+                    .audit(&client, &name, tab.as_deref(), "refused");
+                return Ok(refused(Refusal::Denied).into());
+            }
+            Err(()) => {
+                self.backend
+                    .audit(&client, &name, tab.as_deref(), "timeout");
+                return Ok(refused(Refusal::Denied).into());
+            }
         }
-        let (result, outcome) =
-            match tokio::time::timeout(CALL_DEADLINE, self.run(&client, &name, &args)).await {
+        let run = tokio::time::timeout(CALL_DEADLINE, self.run(&client, &name, &args));
+        let (result, outcome) = tokio::select! {
+            _ = context.ct.cancelled() => (Ok(cancelled()), "cancelled"),
+            timed = run => match timed {
                 Ok(Ok(result)) => {
                     let outcome = outcome(&result);
                     (Ok(result), outcome)
@@ -122,7 +148,8 @@ impl ServerHandler for Handler {
                     )])),
                     "timeout",
                 ),
-            };
+            },
+        };
         self.backend.audit(&client, &name, tab.as_deref(), outcome);
         result.map(Into::into)
     }
