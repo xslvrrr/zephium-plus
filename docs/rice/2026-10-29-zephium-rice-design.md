@@ -36,6 +36,9 @@ and can ship alone:
 
 ## 1. Trance look
 
+> Band, mark and mark-only new tab superseded by
+> `2026-10-29-notch-and-site-styles-design.md` §1.
+
 ### 1.1 Principles
 
 Zephium's frontend contract (`docs/frontend.md`) holds: customization is token-
