@@ -11,16 +11,15 @@ Rebase conflicts appear only in these files.
 | `frame/src/styles/global.css` | One `@import` of `axes/rice.css` after the last axis import |
 | `frame/src/domain/appearance/theme.ts` | `applyRice`: `data-toolbar`, `--rice-radius`, `--rice-texture-opacity` |
 | `frame/src/app/browser/BrowserApp.svelte` | One `$effect` calling `theme.applyRice` from the rice preferences |
-| `frame/src/app/browser/Shell.svelte` | Imports and renders `<RiceTexture />` next to `<SkyLight>` |
-| `crates/zephium-core/src/layout.rs` | `Metrics.toolbar`, `TOOLBAR_BAND`, and `sidebar()` reserving the band above the page |
+| `frame/src/app/browser/Shell.svelte` | Renders `<RiceTexture />` next to `<SkyLight>` and `<RiceTexture fill="page" />` as NewTab's `texture` snippet. The address block is one `addressBlock` snippet, rendered once: in the sidebar, or in the top `Toolbar` while `$session/rice-toolbar` `toolbarBand()` holds (there its utilities are `ToolbarUtilities`, the native sidebar menu); compact address guarded while the band shows |
+| `crates/zephium-core/src/layout.rs` | `Metrics.toolbar`, `TOOLBAR_BAND` (own doc, above `MIN_SIDEBAR_WIDTH`'s), and `sidebar()` reserving the band above the page while the sidebar is shown; hidden, the shape is upstream's exactly |
 | `crates/zephium-core/src/windows.rs` | `Windows::iter_mut` |
 | `crates/zephium-app/src/shell/mod.rs` | `toolbar_band` field, seeded from `ui.toolbar` |
 | `crates/zephium-app/src/shell/bootstrap.rs` | Seeds `metrics.toolbar` on each new Main window |
 | `crates/zephium-app/src/shell/operations.rs` | `ui.toolbar` setting updates all Main windows and relayouts |
-| `frame/src/features/sidebar/components/SidebarHeader.svelte` | Nav buttons extracted to `NavControls` |
-| `frame/src/features/sidebar/index.ts` | Exports `NavControls` |
-| `frame/src/app/browser/Shell.svelte` | (Task 5) Address block moved into `addressBlock` snippet, rendered once in the sidebar or the top `Toolbar`; compact address guarded in top mode |
-| `frame/src/features/sidebar/components/Sidebar.svelte` | `pageControls` is off when `ui.toolbar = top` |
+| `frame/src/features/sidebar/components/SidebarHeader.svelte` | Nav buttons extracted to `NavControls.svelte` (an extraction: upstream edits to the nav buttons conflict here and must be ported by hand into `NavControls`); `navControls` prop hides only them; the sidebar menu's opening and its `extension.action=` handling moved to `lib/sidebar-menu.ts`, shared with the band's `ToolbarUtilities` |
+| `frame/src/features/sidebar/index.ts` | Exports `NavControls` and `ToolbarUtilities` |
+| `frame/src/features/sidebar/components/Sidebar.svelte` | `navControls={!toolbarBand()}` on `SidebarHeader`; `pageControls` stays upstream's, so the rail menu remains in top mode |
 | `desktop/src/platform/window_controls.rs` | (Task 6) `bare` ivar skips resting discs; `set_bare` |
 | `desktop/src/platform/macos.rs` | (Task 6) applies `ui.window-controls` at install; `window_controls_set_bare` wrapper |
 | `desktop/src/lib.rs` | (Task 6) `preference.ui.window-controls=` arm in projection hook |
@@ -32,6 +31,5 @@ Rebase conflicts appear only in these files.
 | `frame/messages/en.json` | (Task 8) `ntp_wordmark_mark`, `ntp_wordmark_none` |
 | `desktop/src/lib.rs` | (Task 9) `mod rice_theme;` and `rice_theme::start(data_dir, shell)` after `external_links::adopt` |
 | `desktop/Cargo.toml` | (Task 9) `notify = =8.2.0` (macos_fsevent), same pin as zephium-notes |
-| `frame/src/app/browser/Shell.svelte` | (Task 11) Passes `<RiceTexture fill="page" />` to NewTab as its `texture` snippet |
 | `frame/src/features/newtab/components/NewTab.svelte` | (Task 11) `texture` snippet drawn over the page's ground; `mark` mode drops the notch field, account and customize controls |
 | `frame/src/features/newtab/lib/layout.ts` | (Task 11) `notched` option: a page without its field cuts no notch |

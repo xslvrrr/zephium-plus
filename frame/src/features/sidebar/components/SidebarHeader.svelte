@@ -1,22 +1,14 @@
 <script lang="ts">
   import * as m from "$shared/i18n/messages";
-  import {
-    EllipsisIcon,
-    SidebarLeftIcon,
-  } from "@hugeicons/core-free-icons";
-  import { tabs } from "$domain/tabs";
-  import { blocker, siteMenuState } from "$domain/blocker";
-  import { pageSite } from "$domain/site-data";
-  import { extensions } from "$domain/extensions";
-  import { webext } from "$domain/webext";
+  import { EllipsisIcon, SidebarLeftIcon } from "@hugeicons/core-free-icons";
   import { uiCommands as ui } from "$domain/ui-commands";
   import { untrack } from "svelte";
-  import { commands } from "$shared/ipc/bindings";
   import { IS_MAC, IS_WINDOWS } from "$shared/platform";
   import { fullscreen } from "$shared/lib/fullscreen.svelte";
   import IconButton from "$shared/ui/IconButton";
   import ModeTabs from "./ModeTabs.svelte";
   import NavControls from "./NavControls.svelte";
+  import { openSidebarMenu, runMenuExtension } from "../lib/sidebar-menu";
   import SidebarSearch from "./SidebarSearch.svelte";
   import WindowControls from "$shared/ui/WindowControls";
 
@@ -24,51 +16,29 @@
     compact,
     ontoggle,
     pageControls = true,
+    navControls = true,
     launcher = false,
   }: {
     compact: boolean;
     ontoggle: () => void;
     /** Back, forward and reload act on a page; Work shows none. */
     pageControls?: boolean;
+    /** rice fork: the top band carries back, forward and reload instead. */
+    navControls?: boolean;
     /** Beside a tool panel, search stands where the shape toggle would. */
     launcher?: boolean;
   } = $props();
 
-  let active = $derived(tabs.activeTab());
   // In fullscreen the lights are gone, and so is the room kept for them.
   let lights = $derived(IS_MAC && !fullscreen());
 
   // At rail width the extensions' buttons live in this menu; a popup chosen
   // there hangs from the button that opened it.
-  let menuAnchor: DOMRect | null = null;
-  function openSidebarMenu(event: MouseEvent) {
+  const menuOwner = Symbol("sidebar-header");
+  function openMenu(event: MouseEvent) {
     const target = event.currentTarget;
     if (!(target instanceof HTMLButtonElement)) return;
-    const anchor = target.getBoundingClientRect();
-    menuAnchor = anchor;
-    const { siteProtected, canHide } = siteMenuState(blocker.status());
-    // A private window keeps nothing to clear, and only a web page has a site.
-    const canClearData =
-      tabs.profile()?.kind !== "incognito" &&
-      (active?.content ?? "web") === "web" &&
-      pageSite(active?.url) !== null;
-    const listed = extensions
-      .activeActions(tabs.profile()?.id ?? null, tabs.activeId())
-      .map((action) => ({
-        id: action.runtime.install_id,
-        label: action.badge ? `${action.label} (${action.badge})` : action.label,
-        icon: action.icon_rgba_base64,
-        enabled: action.enabled,
-      }));
-    void commands.sidebarMenuPopup(
-      anchor.left,
-      anchor.bottom,
-      siteProtected,
-      canHide,
-      canClearData,
-      listed,
-      webext.isAvailable(),
-    );
+    openSidebarMenu(menuOwner, target.getBoundingClientRect());
   }
 
   let handledCommand = 0;
@@ -78,15 +48,7 @@
     handledCommand = command.seq;
     if (!command.id.startsWith("extension.action=")) return;
     const id = command.id.slice("extension.action=".length);
-    untrack(() => {
-      const profile = tabs.profile()?.id ?? null;
-      const tab = tabs.activeId();
-      const action = extensions
-        .activeActions(profile, tab)
-        .find((candidate) => candidate.runtime.install_id === id);
-      if (profile === null || tab === null || !action || !menuAnchor) return;
-      void extensions.invoke(profile, tab, action, menuAnchor);
-    });
+    untrack(() => runMenuExtension(menuOwner, id));
   });
 </script>
 
@@ -118,7 +80,7 @@
           size={15}
           buttonSize={26}
           haspopup
-          onclick={openSidebarMenu}
+          onclick={openMenu}
         />{/if}
       <SidebarSearch small />
     </div>
@@ -146,7 +108,7 @@
         onclick={ontoggle}
       />{/if}<span class="flex-1" aria-hidden="true"></span>
 
-    {#if pageControls}<NavControls />{/if}
+    {#if pageControls && navControls}<NavControls />{/if}
 
     {#if !IS_MAC && !IS_WINDOWS}
       <WindowControls />

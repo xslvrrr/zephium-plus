@@ -5,7 +5,6 @@
   import * as motion from "$session/motion.svelte";
   import { surface as browserPage } from "$domain/surface";
   import { tabs } from "$domain/tabs";
-  import { preferences } from "$domain/preferences";
   import * as tools from "$session/tools.svelte";
   import { tick, untrack } from "svelte";
   import {
@@ -19,6 +18,7 @@
     sidebarResizeSettlement,
     toggleMode,
   } from "$session/sidebar-mode.svelte";
+  import { toolbarBand as riceToolbarBand } from "$session/rice-toolbar.svelte";
   import { commands } from "$shared/ipc/bindings";
   import { newTabImage } from "$session/newtab-background.svelte";
   import { FROSTS, scene } from "$shared/sky";
@@ -491,7 +491,8 @@
       compact={headerCompact}
       launcher={paneled}
       ontoggle={toggleShape}
-      pageControls={!inWork && preferences.value("ui.toolbar") !== "top"}
+      pageControls={!inWork}
+      navControls={!riceToolbarBand()}
     />{/if}
   <div
     bind:this={columns}

@@ -37,6 +37,7 @@
   import * as tabDrag from "$session/tab-drag.svelte";
   import { requestTab } from "$session/work-tab.svelte";
   import { expanded as sidebarWidth } from "$session/sidebar-mode.svelte";
+  import { toolbarBand as riceToolbarBand } from "$session/rice-toolbar.svelte";
   import { uiCommands as ui } from "$domain/ui-commands";
   import { untrack, type Component, type Snippet } from "svelte";
   import { clearRequest } from "$domain/site-data";
@@ -68,6 +69,7 @@
     SidebarSearch,
     SidebarNotice,
     UtilityTray,
+    ToolbarUtilities,
   } from "$features/sidebar";
   import { IS_WINDOWS } from "$shared/platform";
   import { installChromeMenu } from "$shared/lib/chrome-menu";
@@ -139,10 +141,9 @@
   });
   let splitting = $state(false);
   let inWork = $derived(browserPage.currentPage() === "work");
-  // rice fork: in top mode the band holds the one address field; Work keeps
-  // the sidebar's, because the band is not drawn there.
-  let topToolbar = $derived(preferences.value("ui.toolbar") === "top");
-  let toolbarBand = $derived(topToolbar && !inWork);
+  // rice fork: in top mode the band holds the one address field; Work and a
+  // hidden sidebar keep the sidebar's, because the band is not drawn there.
+  let toolbarBand = $derived(riceToolbarBand());
   // Settings stands beside the rail the way a tool panel does.
   let paneled = $derived(
     toolHost.activeTool() !== null || browserPage.currentPage() === "settings",
@@ -330,26 +331,30 @@
   }
 </script>
 
-{#snippet addressBlock(compact: boolean)}
+{#snippet addressBlock(compact: boolean, band: boolean)}
   <AddressField {compact}>
     {#snippet trailing(page)}
-      <UtilityTray
-        label={page === null
+      {@const label =
+        page === null
           ? m.utilities()
           : page.warning
             ? m.site_info_label_status({ status: page.warning })
             : m.site_info_label()}
-        warning={page?.warning}
-      >
-        {#snippet children(open)}
-          {#snippet siteHead(name: string | null, control?: Snippet)}
-            <SiteHead {page} label={name}>{@render control?.()}</SiteHead>
+      <!-- rice fork: in the band the utilities open the native sidebar menu,
+           because a DOM panel there would fall under the page view. -->
+      {#if band}<ToolbarUtilities {label} warning={page?.warning} />{:else}<UtilityTray
+          {label}
+          warning={page?.warning}
+        >
+          {#snippet children(open)}
+            {#snippet siteHead(name: string | null, control?: Snippet)}
+              <SiteHead {page} label={name}>{@render control?.()}</SiteHead>
+            {/snippet}
+            <BlockerShield {open} head={page ? siteHead : undefined} />
+            <ExtensionsSection />
+            <SiteDetails {page} {open} />
           {/snippet}
-          <BlockerShield {open} head={page ? siteHead : undefined} />
-          <ExtensionsSection />
-          <SiteDetails {page} {open} />
-        {/snippet}
-      </UtilityTray>
+        </UtilityTray>{/if}
     {/snippet}
   </AddressField>
 {/snippet}
@@ -398,7 +403,7 @@
             whole column, field included; the tray rides the field itself,
             because everything in it acts on the page the field names.
           -->
-            {#if !toolbarBand}{@render addressBlock(compact)}{/if}
+            {#if !toolbarBand}{@render addressBlock(compact, false)}{/if}
             <!-- Work floats its page over the whole window, sidebar included. -->
             {#if !inWork}<SidebarPagePermission />{/if}
 
@@ -497,7 +502,7 @@
       >{/snippet}</Sidebar
   >
   <div class="stage-column">
-    {#if toolbarBand}<Toolbar>{@render addressBlock(false)}</Toolbar>{/if}
+    {#if toolbarBand}<Toolbar>{@render addressBlock(false, true)}</Toolbar>{/if}
     {#if browserPage.navigationFailed()}<div class="navigation-error" role="alert">
         {m.browser_nav_failed()}
       </div>{/if}
@@ -562,7 +567,9 @@
                 onaccount={openAccount}
                 ontasks={() => void browserPage.open("tasks")}
                 ontime={() => void browserPage.open("time")}
-                >{#snippet texture()}<RiceTexture fill="page" />{/snippet}{#snippet search()}{#key tabs.activeId()}<LazyView
+                >{#snippet texture()}<RiceTexture
+                    fill="page"
+                  />{/snippet}{#snippet search()}{#key tabs.activeId()}<LazyView
                       loader={loadNewTabSearch}
                       loadingLabel={m.surface_loading()}
                       failureLabel={m.surface_render_failed()}

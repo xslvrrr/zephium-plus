@@ -37,6 +37,9 @@ impl Default for Metrics {
     }
 }
 
+/// rice fork: the top toolbar band's height, matching `--rice-toolbar-height`.
+pub const TOOLBAR_BAND: f64 = 44.0;
+
 /// The sidebar's admitted width range, spanning the compact rail through the
 /// widest expanded column.
 ///
@@ -44,8 +47,6 @@ impl Default for Metrics {
 /// again in the privileged IPC guard, which let the rail pass the boundary
 /// check and then get silently widened back by the actor, so the chrome and
 /// the content region disagreed about where the sidebar ended.
-/// rice fork: the top toolbar band's height, matching `--rice-toolbar-height`.
-pub const TOOLBAR_BAND: f64 = 44.0;
 pub const MIN_SIDEBAR_WIDTH: f64 = 56.0;
 pub const MAX_SIDEBAR_WIDTH: f64 = 460.0;
 
@@ -146,7 +147,10 @@ fn sidebar(win: Size, m: Metrics, content_present: bool) -> Layout {
 
     // Hidden, the column keeps its width beneath the page, so it can come
     // over it without laying out again, and the page starts at the gutter.
-    let chrome_width = if m.toolbar > 0.0 {
+    // rice fork: the band applies only while the column is shown; hidden,
+    // the shape is exactly upstream's.
+    let toolbar = if m.sidebar_hidden { 0.0 } else { m.toolbar };
+    let chrome_width = if toolbar > 0.0 {
         // rice fork: the band runs over the content column, so the chrome
         // spans the window. The page view stacks above it inside its rect.
         win.width
@@ -161,13 +165,8 @@ fn sidebar(win: Size, m: Metrics, content_present: bool) -> Layout {
     } else {
         p + m.sidebar_width + m.gap
     };
-    let top = m.caption + m.toolbar;
-    let content = Rect::new(
-        content_x,
-        p + top,
-        win.width - content_x - p,
-        inner_h - top,
-    );
+    let top = m.caption + toolbar;
+    let content = Rect::new(content_x, p + top, win.width - content_x - p, inner_h - top);
     Layout {
         chrome,
         content: Some(content),
