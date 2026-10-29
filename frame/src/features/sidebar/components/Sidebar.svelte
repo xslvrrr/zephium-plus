@@ -23,6 +23,7 @@
   import { FROSTS, scene } from "$shared/sky";
   import { uiCommands as ui } from "$domain/ui-commands";
   import { notchMode } from "$session/notch.svelte";
+  import { claimRegion } from "$session/chrome-regions.svelte";
   import SidebarHeader from "./SidebarHeader.svelte";
   import * as shapeMorph from "../lib/shape-morph";
   import { duration, reducedMotion } from "$shared/lib/motion";
@@ -210,6 +211,28 @@
   });
   let aside = $state<HTMLElement>();
   let peeking = $state(false);
+  // rice fork: in notch mode the chrome spans the window beneath the page, so
+  // a peek cannot raise it whole (it would take every click on the page); the
+  // card claims only its own rect, grown by its shadow's reach on the right.
+  const cardOwner = Symbol("sidebar-card");
+  const CARD_SHADOW_REACH = 64;
+  $effect(() => {
+    if (!(away && peeking && notchMode() && overPage)) return;
+    // Measured once the slide has ended, where the card rests.
+    const settle = reducedMotion() ? 0 : duration("page");
+    const timer = setTimeout(() => {
+      const rect = aside?.getBoundingClientRect();
+      if (rect)
+        claimRegion(
+          cardOwner,
+          new DOMRect(rect.x, rect.y, rect.width + CARD_SHADOW_REACH, rect.height),
+        );
+    }, settle);
+    return () => {
+      clearTimeout(timer);
+      claimRegion(cardOwner, null);
+    };
+  });
   let atEdge = false;
   /** Windows cannot blend the chrome over a page, so it cuts the chrome to
    *  the card, and the cut follows the card as it slides: a little behind it
@@ -447,6 +470,7 @@
   bind:this={aside}
   data-hidden={away || undefined}
   data-peek={(away && peeking) || undefined}
+  data-chrome-region
   data-armed={(away && armed) || undefined}
   data-cut={CUT_TO_CARD || undefined}
   data-leaving={leaving ? true : undefined}

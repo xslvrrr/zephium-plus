@@ -492,7 +492,11 @@ impl Shell {
                 ..SearchState::default()
             },
             tab_preferences: tabs::TabPreferences::load(&*store),
-            chrome_spans: store.app_setting("ui.toolbar").as_deref() == Some("top"),
+            // rice fork: notch mode is macOS-only; Windows derives the page
+            // edge from the chrome's width (`hidden_card_edge`), which a
+            // window-wide chrome would break.
+            chrome_spans: cfg!(target_os = "macos")
+                && store.app_setting("ui.toolbar").as_deref() == Some("top"),
             proxy: network::ProxyPreference::load(&*store),
             presentation: PresentationState::default(),
             zoom: ZoomState::load(&*store),
@@ -979,7 +983,10 @@ impl Shell {
             Command::PeekSidebar { peek, slide } => {
                 if let Some(win) = self.windows.focused() {
                     // Only a hidden sidebar is beneath the page to come over it.
-                    if !peek || win.metrics.sidebar_hidden {
+                    // rice fork: spanning, the chrome beneath the page is the
+                    // whole window, so raising it would take every click on
+                    // the page; the frame claims the card as a region instead.
+                    if (!peek || win.metrics.sidebar_hidden) && !win.metrics.spans {
                         let card = layout::hidden_card(win.size, win.metrics);
                         let _ = self.engine.raise_chrome(win.id, peek, card, slide);
                     }

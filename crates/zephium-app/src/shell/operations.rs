@@ -895,7 +895,9 @@ impl Shell {
         }
         self.tab_preferences.apply(&key, &value);
         if key == "ui.toolbar" {
-            self.chrome_spans = value == "top";
+            // rice fork: macOS-only, as at the seed (Windows derives the
+            // page edge from the chrome's width).
+            self.chrome_spans = cfg!(target_os = "macos") && value == "top";
             for win in self.windows.iter_mut() {
                 if matches!(win.kind, zephium_core::windows::WindowKind::Main) {
                     win.metrics.spans = self.chrome_spans;
