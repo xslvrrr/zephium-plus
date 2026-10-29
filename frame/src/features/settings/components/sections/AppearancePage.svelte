@@ -5,6 +5,7 @@
   import ThemeGallery from "../appearance/ThemeGallery.svelte";
   import ThemeColors from "../appearance/ThemeColors.svelte";
   import FontPicker from "../appearance/FontPicker.svelte";
+  import RiceAppearance from "../appearance/RiceAppearance.svelte";
   import { createThemeEditor } from "../../lib/theme-editor.svelte";
   import { codeFonts, installedCodeFonts } from "../../lib/code-fonts";
   import * as m from "$shared/i18n/messages";
@@ -173,6 +174,8 @@
     />
   </SettingsRow>
 </SettingsGroup>
+
+<RiceAppearance />
 
 <SettingsGroup title={m.look_typography()}>
   <FontPicker />
