@@ -30,5 +30,6 @@ Rebase conflicts appear only in these files.
 | `frame/messages/en.json` | `ntp_wordmark_mark`, `ntp_wordmark_none`; `rice_*` strings for Settings → Appearance → Toolbar and texture; `update_status_unavailable` says the build is a fork updated by rebuilding (other locales keep upstream's text) |
 | `frame/src/features/settings/components/sections/AppearancePage.svelte` | Imports and renders `<RiceAppearance />` (toolbar, window controls, radius, texture strength, clear texture) before Typography |
 | `desktop/Cargo.toml` | `notify = =8.2.0` (macos_fsevent), same pin as zephium-notes; `sha2 = =0.10.9`, the workspace pin, for the texture's media digest |
-| `Cargo.lock` | `zephium-desktop` gains `notify` and `sha2 0.10.9` in its dependency list (no new packages) |
+| `Cargo.lock` | `zephium-desktop` gains `notify` and `sha2 0.10.9` in its dependency list (no new packages); the new `zephium-mcp-server` package (only already-locked dependencies) |
 | `frame/src/features/newtab/lib/layout.ts` | (Task 11) `notched` option: a page without its field cuts no notch |
+| `Cargo.toml` | `[workspace.dependencies]`: `zephium-mcp-server` (the rice MCP server crate) |

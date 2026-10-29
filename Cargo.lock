@@ -7755,6 +7755,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "zephium-mcp-server"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "rmcp",
+ "serde_json",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "zephium-notes"
 version = "0.1.0"
 dependencies = [
