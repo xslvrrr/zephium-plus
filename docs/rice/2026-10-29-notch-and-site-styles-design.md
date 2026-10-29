@@ -37,8 +37,8 @@ are global, per-site and per-feature.
   (if nothing else uses it), and the `newtab_mark` field in
   `desktop/src/rice_theme.rs` and `~/rice/theme/templates/zephium-theme.json.tmpl`.
 - The new-tab wallpaper while `ui.toolbar=top`: no ground image, no notch cut
-  into it. Window material and the rice texture (`RiceTexture.svelte`) show
-  through. Upstream's wallpaper path stays for `ui.toolbar=sidebar`.
+  into it. Window material and the rice texture (the native backdrop of
+  §1.6) show through. Upstream's wallpaper path stays for `ui.toolbar=sidebar`.
 
 The preference key and value stay `ui.toolbar=top` so the rendered
 `rice-theme.json` keeps working; Settings labels the value "Notch".
@@ -111,6 +111,20 @@ scrolling.
 - The chrome is raised only while something is down, so a transparent
   full-window layer is not composited over the page the rest of the time.
 
+**Region rules.** The frame sends one list of input rects: the notch while
+it is down (with any of its open menus), the window-controls group while it
+is down, and the hidden sidebar's card while it peeks. The engine raises the
+chrome while the list is non-empty or a peek holds it (two flags, raised
+when either is set). While raised, a non-empty list limits input to those
+rects; an empty list (a peek outside top mode) keeps today's whole-view
+input. The page beneath keeps setting its own cursor outside the rects.
+
+**Nothing else paints over the page.** While raised, the chrome document
+paints nothing over the content rect: `html[data-chrome-raised]` makes the
+body ground transparent, and the rice texture is no longer in the chrome
+(§1.6). Page transparency (§2) needs a native material; with
+`ui.material=none` it is not applied.
+
 **Pointer zones.** The page view receives mouse events, not the chrome, so
 reveal is read natively. `desktop/src/platform/macos/sidebar_edge.rs` already
 watches a local `NSEvent` mouse-moved monitor for the left edge; it
@@ -123,6 +137,32 @@ privileged IPC, `CallerPolicy::Main`). Native sends enter and leave events
 **Alternatives rejected.** A second webview just for the notch duplicates
 frame state and IPC authorisation and costs a WKWebView. A native AppKit
 notch rebuilds the toolbar outside Svelte.
+
+### 1.6 Native texture backdrop
+
+The rice texture moves from the chrome (`RiceTexture.svelte`, an `<img>`
+fixed over the chrome's ground) to one native layer per Main window, above
+the window material and beneath both the chrome and the page views. Chrome,
+new tab and transparent pages then all sit over the same texture, and
+raising the chrome never moves it.
+
+- The layer shows the stored `ui.texture` media (digest) scaled to fill
+  (aspect fill), at `ui.texture-opacity`. It is cleared when `ui.texture` is
+  empty, the digest is unreadable, or forced colours / Increase Contrast
+  apply.
+- `RiceTexture.svelte` and its two uses in `Shell.svelte` are removed.
+
+### 1.7 Window-controls group details
+
+- The traffic lights slide by animating their layers' `transform` (a
+  translation), never their frames or `alphaValue`, so Tao's inset and
+  AppKit's titlebar layout are untouched (see the module note in
+  `window_controls.rs`).
+- While the group is up the buttons are hidden (`setHidden`, as
+  `set_tucked` already does), so invisible buttons take no clicks.
+- The activation area is the top strip of §1.4 together with the buttons'
+  own rect, so a pointer that goes straight to the corner still reveals
+  them.
 
 ## 2. Page transparency
 
@@ -161,8 +201,14 @@ Pure Rust, no platform code.
   `-` matches the same name under other public suffixes (`-cifraclub.com.br`
   covers `cifraclub.com`); `mapping` points more domains at a file. The most
   specific match wins: exact, then `+`, then `-`, then mapping.
-- Produces, for a set of preferences, the list of sheets to install: CSS text
-  plus WebKit match patterns (`*://domain/*`, `*://*.domain/*` for `+`).
+- Produces, for a host and the current settings and overrides, the CSS to
+  apply there (or none).
+- **No loads from styles.** Updated CSS comes from a third party and is
+  applied to every matching page, where a stylesheet could leak page data
+  through the requests it makes. A feature whose CSS contains `@import`,
+  `@font-face`, `image-set(`, or a `url(` that is not `data:` or a `#`
+  fragment is dropped at parse time and counted in the log. (At the time of
+  writing `styles.json` has one relative `url()` and no `@import`.)
 - A forced-transparency sheet written for this fork (not copied from any
   unlicensed source): `html, body { background: transparent !important; }`
   and a few common root containers.
@@ -185,12 +231,17 @@ Pure Rust, no platform code.
 
 ### 3.3 Injection
 
-- One `_WKUserStyleSheet` per enabled site at author level, with that site's
-  match patterns, installed in every page webview's user content
-  controller. WebKit applies a sheet only to matching documents, so there is
-  no per-page script, no flash before the style applies, and site CSP does
-  not block it.
-- A change to one site's toggles rebuilds only that site's sheets.
+- One `_WKUserStyleSheet` per host, at author level, main frame only, with
+  the include pattern `*://<host>/*`, added to a page webview's user content
+  controller when that view starts a main-frame navigation to the host (or
+  is redirected to it), before the document exists. WebKit applies a sheet
+  only to matching documents, so there is no per-page script, no flash
+  before the style applies, and site CSP does not block it. Sheets are added
+  per host rather than per site because `-domain` entries (any suffix)
+  cannot be written as WebKit match patterns; the crate decides the match.
+- A change to the global switches or one site's toggles removes the
+  fork's sheets from every controller and re-adds them for each view's
+  current host.
 - The backstop of §2 is installed the same way at user level.
 - Private windows get the same sheets; toggles are stored in the profile.
 - The private API is allow-listed in the `xtask` boundary checks alongside
