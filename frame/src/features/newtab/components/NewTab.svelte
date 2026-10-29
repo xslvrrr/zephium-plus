@@ -38,6 +38,7 @@
 
   let {
     search,
+    ground: groundKind = "sky",
     oncustomize,
     onaccount,
     ontasks,
@@ -45,6 +46,10 @@
   }: {
     /** The field that hangs in the notch. */
     search: Snippet;
+    /** rice fork: "none" leaves the page groundless, with no sky, picture or
+     *  notch cut and no field of its own: the window's material shows
+     *  through, and the notch toolbar's field is the search. */
+    ground?: "sky" | "none";
     /** Opens this page's settings. */
     oncustomize?: () => void;
     /** Opens the account in Settings, or straight onto buying credits. */
@@ -69,8 +74,10 @@
   let showAccount = $derived(!!onaccount && account.available);
   let signInWidth = $state(0);
   let profile = $derived(tabs.profile()?.id ?? null);
-  let picture = $derived(newTabImage());
-  let useSky = $derived(picture === null);
+  // rice fork: a groundless page has neither picture nor sky.
+  let grounded = $derived(groundKind === "sky");
+  let picture = $derived(grounded ? newTabImage() : null);
+  let useSky = $derived(grounded && picture === null);
   let background = $derived.by(() => {
     const selected = picture;
     return selected
@@ -185,6 +192,7 @@
       controls,
       clock: showClock,
       wordmark: showWordmark,
+      notched: grounded,
     }),
   );
   const at = ({ x, y, w, h }: Box) => `left:${x}px;top:${y}px;width:${w}px;height:${h}px`;
@@ -316,6 +324,7 @@
   class:arriving={useSky && arriving}
   class:entering={useSky && !arriving}
   class:custom={!useSky}
+  class:bare={!grounded}
   data-scene={scene}
   data-ready={!useSky || shown === scene}
   aria-label={m.new_tab()}
@@ -326,7 +335,11 @@
   bind:clientWidth={width}
   bind:clientHeight={height}
 >
-  {#if ground}<div class="page" aria-hidden="true" style:clip-path={`path(evenodd, "${ground}")`}>
+  {#if ground && grounded}<div
+      class="page"
+      aria-hidden="true"
+      style:clip-path={`path(evenodd, "${ground}")`}
+    >
       {#if picture && width > 0 && height > 0}
         {#key picture.key}
           {@const selected = picture}
@@ -407,9 +420,13 @@
     style:height={`${page.notch.height}px`}
   ></div>
 
-  <div class="field" style:width={`${fieldWidth}px`} style:height={`${page.notch.height}px`}>
-    {@render search()}
-  </div>
+  {#if grounded}<div
+      class="field"
+      style:width={`${fieldWidth}px`}
+      style:height={`${page.notch.height}px`}
+    >
+      {@render search()}
+    </div>{/if}
 
   {#if showGreeting}
     <p class="greeting" style:bottom={`${height - page.mark.y + 18}px`}>
@@ -837,6 +854,14 @@
 
   .custom .figure {
     background: var(--color-surface);
+  }
+
+  /* rice fork: with no ground the words stand on the window's own material,
+     so they take the chrome's ink rather than the sky's. */
+  .newtab.bare {
+    --sky-ink: var(--color-text);
+    --sky-name: var(--color-text);
+    --sky-shadow: transparent;
   }
 
   /* A narrow pane keeps each figure to its icon and value on one row; the

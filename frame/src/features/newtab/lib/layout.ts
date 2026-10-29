@@ -46,10 +46,11 @@ export function layout(
   // one of them, so the field stays in the middle however wide they are.
   const reach = controls.reduce((sum, w) => sum + w + CONTROL.gap, CONTROL.inset - CONTROL.gap);
   const corner = Math.max(CORNER, reach + CORNER - TWO_ROUND);
-  // rice fork: a page with no field cuts no notch, so nothing waits for one.
+  // rice fork: a page with no field cuts no notch, so nothing waits for one;
+  // the band it would hang in keeps its depth, to move the window by.
   const notch = notched
     ? { ...NOTCH, width: Math.min(NOTCH.width, width - 2 * corner) }
-    : { ...NOTCH, width: 0, height: 0 };
+    : { ...NOTCH, width: 0 };
 
   const buttonY = Math.round((NOTCH.height - CONTROL.size) / 2);
   let right = width - CONTROL.inset;

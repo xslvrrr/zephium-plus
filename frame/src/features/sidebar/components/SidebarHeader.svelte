@@ -23,7 +23,7 @@
     ontoggle: () => void;
     /** Back, forward and reload act on a page; Work shows none. */
     pageControls?: boolean;
-    /** rice fork: the top band carries back, forward and reload instead. */
+    /** rice fork: the notch carries back, forward and reload instead. */
     navControls?: boolean;
     /** Beside a tool panel, search stands where the shape toggle would. */
     launcher?: boolean;

@@ -22,6 +22,7 @@
   import { newTabImage } from "$session/newtab-background.svelte";
   import { FROSTS, scene } from "$shared/sky";
   import { uiCommands as ui } from "$domain/ui-commands";
+  import { notchMode } from "$session/notch.svelte";
   import SidebarHeader from "./SidebarHeader.svelte";
   import * as shapeMorph from "../lib/shape-morph";
   import { duration, reducedMotion } from "$shared/lib/motion";
@@ -486,11 +487,13 @@
   <!-- Settings stands beside the rail with no head: its panel runs the full
        height and the rail keeps only the lights' row. A tool keeps the head,
        with search and the page's own controls. -->
+  <!-- rice fork: in notch mode the notch carries back, forward and reload. -->
   {#if !settings}<SidebarHeader
       compact={headerCompact}
       launcher={paneled}
       ontoggle={toggleShape}
       pageControls={!inWork}
+      navControls={!notchMode()}
     />{/if}
   <div
     bind:this={columns}

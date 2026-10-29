@@ -36,7 +36,7 @@
   import { requestTab } from "$session/work-tab.svelte";
   import { expanded as sidebarWidth } from "$session/sidebar-mode.svelte";
   import { uiCommands as ui } from "$domain/ui-commands";
-  import { untrack, type Component, type Snippet } from "svelte";
+  import { tick, untrack, type Component, type Snippet } from "svelte";
   import { clearRequest } from "$domain/site-data";
   import { BlockerShield, HidingBar, hideElements, toggleSiteProtection } from "$features/blocker";
 
@@ -72,6 +72,8 @@
   import { installChromeMenu } from "$shared/lib/chrome-menu";
   import { tabs } from "$domain/tabs";
   import { preferences } from "$domain/preferences";
+  import { Notch } from "$features/notch";
+  import { holdNotch, notchMode, pinNotch } from "$session/notch.svelte";
   /** New Note, from the menu or its shortcut: a note starts where notes are open. */
   async function newNote() {
     const profile = tabs.profile()?.id;
@@ -138,6 +140,9 @@
   });
   let splitting = $state(false);
   let inWork = $derived(browserPage.currentPage() === "work");
+  // rice fork: in notch mode the notch holds the one address field; Work
+  // keeps the sidebar's, as upstream.
+  let notched = $derived(notchMode());
   // Settings stands beside the rail the way a tool panel does.
   let paneled = $derived(
     toolHost.activeTool() !== null || browserPage.currentPage() === "settings",
@@ -238,6 +243,7 @@
       if (command.id === "page.copyLink") void tabs.copyActiveLink().then(linkCopied);
       if (command.id === "tab.clearSiteData") clearRequest.ask(tabs.takeMenuTargetUrl());
       if (command.id === "page.clearSiteData") clearRequest.ask(tabs.activeTab()?.url);
+      if (command.id === "url.focus" && notched) void focusNotchAddress();
       if (command.id === "find.show") findInPage.show(tabs.activeId());
       if (command.id === "find.next") findInPage.step(true, tabs.activeId());
       if (command.id === "find.previous") findInPage.step(false, tabs.activeId());
@@ -278,6 +284,61 @@
       else if (!tab || tab.url || tab.id !== newTabLoad) newTabLoad = null;
     });
   });
+  // rice fork: the notch is down on the new tab and Zephium's own pages; over
+  // a web page only the pointer or something held in it brings it down.
+  $effect(() => pinNotch(notched && (newTabShown || browserPage.currentPage() !== null)));
+  // rice fork: the panes the chrome draws in the page's place, where the
+  // notch must leave the pointer to them as it does on the new tab.
+  let chromePane = $derived.by(() => {
+    if (browserPage.currentPage() !== null) return false;
+    const tab = tabs.activeTab();
+    const capacity = tab?.availability?.state;
+    return (
+      focus.cover() !== null ||
+      capacity === "waiting_for_capacity" ||
+      capacity === "blocked_by_capacity" ||
+      (!!tab && failedPane(tab))
+    );
+  });
+  // rice fork: the page's rect in window points, which the notch hangs over.
+  // The stage column stands where the page does, less the core layout's gap
+  // at its inline start, which goes while the column is put away (browser.css).
+  const PAGE_GAP = 8;
+  const COLUMN_AWAY =
+    ".shell:has(> .browser-sidebar:is([data-hidden], [data-leaving])) .stage-column";
+  let stageColumn = $state<HTMLElement>();
+  let pageColumn = $state({ x: 0, width: 0 });
+  $effect(() => {
+    const column = stageColumn;
+    if (!column || !notched) return;
+    const sizes = new ResizeObserver(() => {
+      const rect = column.getBoundingClientRect();
+      const gap = column.matches(COLUMN_AWAY) ? 0 : PAGE_GAP;
+      pageColumn = { x: rect.x + gap, width: Math.max(0, rect.width - gap) };
+    });
+    sizes.observe(column);
+    return () => sizes.disconnect();
+  });
+  // rice fork: ⌘L brings the notch down before the field takes focus: the
+  // notch is inert while it is up, so the field's own focus finds nothing to
+  // take it. Held only until the field is focused, when the notch's own focus
+  // hold takes over, so nothing is left holding it. A page in front edits its
+  // address in the launcher instead (AddressField's `editInLauncher`).
+  const addressCommand = Symbol("address command");
+  async function focusNotchAddress() {
+    const tab = tabs.activeTab();
+    if (tab?.url && (tab.content ?? "web") === "web") return;
+    holdNotch(addressCommand, true);
+    await tick();
+    const field = document.querySelector<HTMLInputElement>(
+      "[data-rice-notch] input[data-zephium-address]",
+    );
+    if (field && document.activeElement !== field) {
+      field.focus({ preventScroll: true });
+      field.select();
+    }
+    holdNotch(addressCommand, false);
+  }
   // A tab with nothing to show (a first load that failed, a restored page
   // that did not load, a crash it could not recover from, a page the engine
   // replaced with an empty error document) says why in its pane.
@@ -367,16 +428,17 @@
   data-zephium-surface={browserPage.currentPage() ?? "browse"}
   data-private={incognito || undefined}
 >
-  {#if !newTabImage()}<SkyLight shown={skyShown} />{/if}
+  <!-- rice fork: the notch's new tab has no sky to light the window with. -->
+  {#if !newTabImage() && !notched}<SkyLight shown={skyShown} />{/if}
   <Sidebar
     >{#snippet browserBody(compact)}
       {#if compact && (inWork || paneled)}
-        {#if !inWork}<AddressField {compact} /><StoreInstallRail />{/if}
+        {#if !inWork}{#if !notched}<AddressField {compact} />{/if}<StoreInstallRail />{/if}
         {#if paneled && IS_WINDOWS}
           {#if browserPage.currentPage() === "settings"}<ModeTabs compact standalone />{/if}
           <div class="rail-search"><SidebarSearch /></div>
         {:else if paneled}<ModeTabs compact standalone />{/if}
-      {:else if compact}<AddressField {compact} /><StoreInstallRail />
+      {:else if compact}{#if !notched}<AddressField {compact} />{/if}<StoreInstallRail />
       {:else if !incognito && preferences.enabled("work")}<div class="sidebar-head">
           <ModeTabs />
         </div>{/if}
@@ -391,7 +453,7 @@
             whole column, field included; the tray rides the field itself,
             because everything in it acts on the page the field names.
           -->
-            {@render addressBlock(compact)}
+            {#if !notched}{@render addressBlock(compact)}{/if}
             <!-- Work floats its page over the whole window, sidebar included. -->
             {#if !inWork}<SidebarPagePermission />{/if}
 
@@ -490,7 +552,10 @@
           />{/snippet}</LazyView
       >{/snippet}</Sidebar
   >
-  <div class="stage-column">
+  <div class="stage-column" bind:this={stageColumn}>
+    {#if notched}<Notch content={pageColumn} newTab={newTabShown || chromePane}
+        >{#snippet address()}{@render addressBlock(false)}{/snippet}</Notch
+      >{/if}
     {#if browserPage.navigationFailed()}<div class="navigation-error" role="alert">
         {m.browser_nav_failed()}
       </div>{/if}
@@ -551,6 +616,7 @@
             failureLabel={m.surface_render_failed()}
             retryLabel={m.surface_retry()}
             >{#snippet children(NewTab)}<NewTab
+                ground={notched ? "none" : "sky"}
                 oncustomize={openSettings}
                 onaccount={openAccount}
                 ontasks={() => void browserPage.open("tasks")}
