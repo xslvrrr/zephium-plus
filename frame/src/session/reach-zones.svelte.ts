@@ -19,7 +19,8 @@ export function setZone(name: string, spec: Spec | null) {
     window.addEventListener("zephium:reach-zone", (event) => {
       const { name: zone, inside: now } = (event as CustomEvent<{ name: string; inside: boolean }>)
         .detail;
-      inside[zone] = now;
+      // Native repeats a held zone whenever the zones are sent again.
+      if (inside[zone] !== now) inside[zone] = now;
     });
   }
   if (spec === null) specs.delete(name);

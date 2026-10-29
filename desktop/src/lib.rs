@@ -5443,14 +5443,29 @@ fn reach_zones(caller: WebviewWindow, zones: Vec<ZoneSpec>) {
     if !authorize(&caller, CallerPolicy::Main, "reach_zones") {
         return;
     }
+    let finite = |r: &RegionRect| [r.x, r.y, r.width, r.height].iter().all(|v| v.is_finite());
     let rect = |r: RegionRect| Rect::new(r.x, r.y, r.width.max(0.0), r.height.max(0.0));
+    let mut zones: Vec<ZoneSpec> = zones
+        .into_iter()
+        .filter(|z| !z.name.is_empty() && z.name.len() <= 32 && finite(&z.keep))
+        .collect();
+    // A name sent twice keeps its last spec.
+    let mut seen = std::collections::HashSet::new();
+    zones.reverse();
+    zones.retain(|z| seen.insert(z.name.clone()));
+    zones.reverse();
     let zones: Vec<reach_zones::Zone> = zones
         .into_iter()
-        .filter(|z| !z.name.is_empty() && z.name.len() <= 32)
         .take(4)
         .map(|z| reach_zones::Zone {
             name: z.name,
-            activate: z.activate.into_iter().take(4).map(rect).collect(),
+            activate: z
+                .activate
+                .into_iter()
+                .filter(finite)
+                .take(4)
+                .map(rect)
+                .collect(),
             keep: rect(z.keep),
         })
         .collect();

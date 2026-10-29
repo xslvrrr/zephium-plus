@@ -23,23 +23,28 @@ fn contains(rect: &Rect, x: f64, y: f64) -> bool {
 
 impl Tracker {
     /// Replaces the zones. A zone that keeps its name keeps its state, so
-    /// re-measuring an open notch does not close it.
+    /// re-measuring an open notch does not close it. Every zone the pointer
+    /// is in is reported again: a reloaded chrome starts knowing none, and
+    /// its first zones would otherwise never hear that one is already held.
     pub fn set(&mut self, zones: Vec<Zone>) -> Vec<(String, bool)> {
-        let mut left = Vec::new();
+        let mut changed = Vec::new();
         let old = std::mem::take(&mut self.zones);
         for (zone, inside) in &old {
             if *inside && !zones.iter().any(|z| z.name == zone.name) {
-                left.push((zone.name.clone(), false));
+                changed.push((zone.name.clone(), false));
             }
         }
         self.zones = zones
             .into_iter()
             .map(|zone| {
                 let inside = old.iter().any(|(z, inside)| *inside && z.name == zone.name);
+                if inside {
+                    changed.push((zone.name.clone(), true));
+                }
                 (zone, inside)
             })
             .collect();
-        left
+        changed
     }
 
     /// The zones whose state the pointer at `(x, y)` changes.
@@ -103,7 +108,9 @@ mod tests {
         let mut t = Tracker::default();
         t.set(vec![zone()]);
         t.moved(150.0, 2.0);
-        assert!(t.set(vec![zone()]).is_empty());
+        assert_eq!(t.set(vec![zone()]), vec![("notch".into(), true)]);
+        assert!(t.moved(80.0, 70.0).is_empty());
         assert_eq!(t.set(vec![]), vec![("notch".into(), false)]);
+        assert!(t.set(vec![zone()]).is_empty());
     }
 }
