@@ -23,6 +23,7 @@
   import { FROSTS, scene } from "$shared/sky";
   import { uiCommands as ui } from "$domain/ui-commands";
   import { notchMode } from "$session/notch.svelte";
+  import { preferences } from "$domain/preferences";
   import { claimRegion } from "$session/chrome-regions.svelte";
   import SidebarHeader from "./SidebarHeader.svelte";
   import * as shapeMorph from "../lib/shape-morph";
@@ -211,27 +212,31 @@
   });
   let aside = $state<HTMLElement>();
   let peeking = $state(false);
-  // rice fork: in notch mode the chrome spans the window beneath the page, so
-  // a peek cannot raise it whole (it would take every click on the page); the
-  // card claims only its own rect, grown by its shadow's reach on the right.
+  // rice fork: with the toolbar on top (macOS) the chrome spans the window
+  // beneath the page, so a peek cannot raise it whole (native skips that, as
+  // it would take every click on the page); the card claims its own rect
+  // instead, grown by its shadow's reach on the right. The claim is held from
+  // the peek's start to the end of the slide out, so the card is over the
+  // page for the whole of its slide. Work draws its own page, so `overPage`
+  // is false there and the claim is not made.
   const cardOwner = Symbol("sidebar-card");
+  const CARD_INSET = 8;
   const CARD_SHADOW_REACH = 64;
+  let claiming = $state(false);
+  const spanning = () => IS_MAC && preferences.value("ui.toolbar") === "top";
   $effect(() => {
-    if (!(away && peeking && notchMode() && overPage)) return;
-    // Measured once the slide has ended, where the card rests.
-    const settle = reducedMotion() ? 0 : duration("page");
-    const timer = setTimeout(() => {
-      const rect = aside?.getBoundingClientRect();
-      if (rect)
-        claimRegion(
-          cardOwner,
-          new DOMRect(rect.x, rect.y, rect.width + CARD_SHADOW_REACH, rect.height),
-        );
-    }, settle);
-    return () => {
-      clearTimeout(timer);
-      claimRegion(cardOwner, null);
-    };
+    if (!(away && claiming && spanning() && overPage)) return;
+    // The card's rest geometry (`layout::hidden_card`), whatever the slide has done.
+    claimRegion(
+      cardOwner,
+      new DOMRect(
+        CARD_INSET,
+        CARD_INSET,
+        Math.min(width + 2 * CARD_INSET, Math.max(innerWidth - CARD_INSET, 0)) + CARD_SHADOW_REACH,
+        Math.max(innerHeight - 2 * CARD_INSET, 0),
+      ),
+    );
+    return () => claimRegion(cardOwner, null);
   });
   let atEdge = false;
   /** Windows cannot blend the chrome over a page, so it cuts the chrome to
@@ -255,6 +260,7 @@
     clearTimeout(linger);
     clearTimeout(lowered);
     lowered = undefined;
+    claiming = true;
     if (!peeking) opened = performance.now();
     if (peeking) {
       void commands.sidebarPeek(true, true, slides());
@@ -297,7 +303,10 @@
           void commands.sidebarPeek(false, false, slides());
           lowered = setTimeout(() => {
             peeking = false;
-            lowered = setTimeout(() => (lowered = undefined), duration("page"));
+            lowered = setTimeout(() => {
+              lowered = undefined;
+              claiming = false;
+            }, duration("page"));
           }, CUT_LEAD_MS);
           return;
         }
@@ -307,6 +316,7 @@
         void commands.sidebarPeek(true, false, false);
         lowered = setTimeout(() => {
           lowered = undefined;
+          claiming = false;
           void commands.sidebarPeek(false, false, false);
         }, duration("page"));
       },
@@ -331,6 +341,7 @@
     untrack(() => {
       if (peeking) void commands.sidebarPeek(false, false, false);
       peeking = false;
+      claiming = false;
     });
   });
   $effect(() => () => {
