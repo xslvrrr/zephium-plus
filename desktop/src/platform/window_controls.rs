@@ -54,9 +54,9 @@ const APPROACH: f64 = 6.0;
 const LIGHT_SECONDS: f64 = 0.14;
 const REST_SECONDS: f64 = 0.24;
 
-/// rice fork: how far above its place a put-away control waits: its own
-/// height and the titlebar's inset, so nothing of it shows.
-const GROUP_LIFT: f64 = 40.0;
+/// rice fork: how far above its place a put-away control waits before its
+/// titlebar is laid out (see `WindowControls::group_lift`).
+const GROUP_LIFT_FALLBACK: f64 = 40.0;
 const GROUP_SECONDS: f64 = 0.18;
 
 fn group_slide() -> &'static objc2_foundation::NSString {
@@ -154,6 +154,9 @@ define_class!(
             // is the one callback guaranteed to follow every such change.
             self.setNeedsDisplay(true);
             self.settle();
+            // rice fork: re-insetting a button sets its frame origin, which
+            // resets its layer's transform; a group put away stays put away.
+            self.hold_lift();
             // SAFETY: NSView requires overrides of this method to call super.
             unsafe { msg_send![super(self), updateTrackingAreas] }
         }
@@ -306,15 +309,16 @@ impl WindowControls {
         } else {
             0.0
         };
-        let lift = if down { 0.0 } else { GROUP_LIFT };
+        let put_away = self.group_lift();
+        let lift = if down { 0.0 } else { put_away };
         let buttons = self.buttons();
         // Already on their way up: the slide under way hides them as it ends.
         if !down && duration > 0.0 && buttons.iter().any(|button| heading(button, lift)) {
             return;
         }
-        // Hover mode decides on its own; shown mode leaves a tucked window's
-        // corner empty, as `set_tucked` put it.
-        let show = down && (bare || !self.isHidden());
+        // Shown mode leaves a tucked window's corner exactly as `set_tucked`
+        // put it; hover mode decides on its own.
+        let tucked = self.isHidden();
         CATransaction::begin();
         CATransaction::setDisableActions(true);
         if !down {
@@ -338,10 +342,15 @@ impl WindowControls {
             unsafe { CATransaction::setCompletionBlock(Some(&hide)) };
         }
         for button in &buttons {
-            if show {
+            // A hidden button waits put away whatever its layer says: a frame
+            // set while it was hidden has reset its transform.
+            let from = (down && button.isHidden()).then_some(put_away);
+            if !bare {
+                button.setHidden(tucked);
+            } else if down {
                 button.setHidden(false);
             }
-            slide(button, lift, duration);
+            slide(button, lift, duration, from);
         }
         CATransaction::commit();
         if !bare {
@@ -349,6 +358,39 @@ impl WindowControls {
         } else if down {
             self.light(true, false);
         }
+    }
+
+    /// rice fork: how far up a put-away control waits: the titlebar's height
+    /// and its own, so nothing of it shows whatever the release lays out.
+    fn group_lift(&self) -> f64 {
+        let Some(button) = self.buttons().into_iter().next() else {
+            return GROUP_LIFT_FALLBACK;
+        };
+        // SAFETY: main-thread reads of the live button's ancestors.
+        let container =
+            unsafe { button.superview() }.and_then(|parent| unsafe { parent.superview() });
+        container.map_or(GROUP_LIFT_FALLBACK, |container| {
+            container.frame().size.height + button.frame().size.height
+        })
+    }
+
+    /// rice fork: puts a put-away group's model transform back after AppKit
+    /// reset it, without touching a slide under way, which the model does
+    /// not show until it ends.
+    fn hold_lift(&self) {
+        if !self.ivars().bare.get() || self.ivars().group_down.get() || self.ivars().suspended.get()
+        {
+            return;
+        }
+        let lift = self.group_lift();
+        CATransaction::begin();
+        CATransaction::setDisableActions(true);
+        for button in self.buttons() {
+            if let Some(layer) = button.layer() {
+                layer.setTransform(CATransform3D::new_translation(0.0, lift, 0.0));
+            }
+        }
+        CATransaction::commit();
     }
 
     fn suspend(&self, suspended: bool) {
@@ -363,7 +405,7 @@ impl WindowControls {
                     button.setHidden(false);
                     CATransaction::begin();
                     CATransaction::setDisableActions(true);
-                    slide(&button, 0.0, 0.0);
+                    slide(&button, 0.0, 0.0, None);
                     CATransaction::commit();
                 }
             }
@@ -518,28 +560,40 @@ fn fade(view: &NSView, opacity: f32, duration: f64) {
     CATransaction::commit();
 }
 
-/// rice fork: whether a view's layer is mid-slide to `lift` already.
+/// rice fork: whether a view's layer is mid-slide to `lift` already. Read
+/// from the slide itself: AppKit may have reset the model under it.
 fn heading(view: &NSView, lift: f64) -> bool {
-    view.layer().is_some_and(|layer| {
-        // SAFETY: a main-thread read of the layer's own animations.
-        (layer.transform().m42 - lift).abs() < f64::EPSILON
-            && unsafe { layer.animationForKey(group_slide()) }.is_some()
-    })
+    let Some(layer) = view.layer() else {
+        return false;
+    };
+    // SAFETY: a main-thread read of the layer's own animations.
+    let Some(animation) = (unsafe { layer.animationForKey(group_slide()) }) else {
+        return false;
+    };
+    animation
+        .downcast::<CABasicAnimation>()
+        .ok()
+        .and_then(|basic| basic.toValue())
+        .and_then(|value| value.downcast::<NSNumber>().ok())
+        .is_some_and(|to| (to.doubleValue() - lift).abs() < f64::EPSILON)
 }
 
 /// rice fork: moves a view's layer `lift` points up from its place by its
 /// transform, never its frame, continuing from wherever an unfinished slide
-/// has got to. Runs inside the caller's transaction, with actions disabled.
-fn slide(view: &NSView, lift: f64, duration: f64) {
+/// has got to, or from `from` when the caller knows better. Runs inside the
+/// caller's transaction, with actions disabled.
+fn slide(view: &NSView, lift: f64, duration: f64, from: Option<f64>) {
     let Some(layer) = view.layer() else {
         return;
     };
-    if duration > 0.0 && heading(view, lift) {
+    if duration > 0.0 && from.is_none() && heading(view, lift) {
         return;
     }
     // SAFETY: a main-thread read of the layer's in-flight rendering state.
-    let from = unsafe { layer.presentationLayer() }
-        .map_or(layer.transform().m42, |shown| shown.transform().m42);
+    let from = from.unwrap_or_else(|| {
+        unsafe { layer.presentationLayer() }
+            .map_or(layer.transform().m42, |shown| shown.transform().m42)
+    });
     // AppKit layers are not flipped: up is positive.
     layer.setTransform(CATransform3D::new_translation(0.0, lift, 0.0));
     layer.removeAnimationForKey(group_slide());
@@ -646,7 +700,13 @@ pub fn set_tucked(window: &WebviewWindow, tucked: bool) {
     controls.setHidden(tucked);
     if !tucked && !controls.ivars().suspended.get() {
         controls.reinset();
-        controls.resync(false);
+        // rice fork: in hover mode the group's state has not changed; the
+        // lift is held, and a slide under way carries on.
+        if controls.ivars().bare.get() {
+            controls.hold_lift();
+        } else {
+            controls.resync(false);
+        }
         // They come in with the card rather than ahead of it; they leave at
         // once, so a pointer that has moved on is not left with them.
         if let Some(layer) = controls.layer() {

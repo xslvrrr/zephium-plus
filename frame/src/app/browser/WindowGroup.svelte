@@ -74,7 +74,7 @@
     if (event.target === group && event.propertyName === "transform" && !down) shown = false;
   }
 
-  // Native moves the real buttons in the same frame as the slide begins.
+  // Native moves the real buttons together with the slide.
   $effect(() => {
     void commands.windowGroup(down);
   });
@@ -110,7 +110,7 @@
   data-tauri-drag-region
   data-chrome-region
   data-down={down || undefined}
-  data-over-page={isHidden() || undefined}
+  data-sidebar-away={isHidden() || undefined}
   aria-hidden={!shown || undefined}
   inert={!shown}
   onfocusin={() => (focused = true)}
@@ -166,15 +166,16 @@
     border-radius: var(--radius-control);
   }
 
-  /* Over a page the button needs a ground of its own to read against it:
-     the notch's, with the hidden sidebar's hairline. */
-  .window-group[data-over-page] .window-group-button {
+  /* With the sidebar away the button stands over whatever is in its place
+     (a page, the new tab's texture, a pane) and needs a ground of its own
+     to read against it: the notch's, with the hidden sidebar's hairline. */
+  .window-group[data-sidebar-away] .window-group-button {
     background: var(--color-chrome);
     box-shadow: 0 0 0 1px var(--sidebar-card-edge);
   }
 
   :global(:root:not([data-material="none"])[data-material])
-    .window-group[data-over-page]
+    .window-group[data-sidebar-away]
     .window-group-button {
     background: color-mix(in srgb, var(--color-chrome) var(--wash-raised), transparent);
   }

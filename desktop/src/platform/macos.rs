@@ -676,6 +676,11 @@ pub fn sidebar_hidden(window: &WebviewWindow, hidden: bool) {
 pub fn sidebar_card_lights(window: &WebviewWindow, shown: bool) {
     let owner = window.clone();
     let _ = window.run_on_main_thread(move || {
+        // rice fork: in hover mode the window-controls group owns the lights
+        // during a peek too: they keep their place and come with the group.
+        if super::window_controls::is_bare(&owner) {
+            return;
+        }
         if HIDDEN_SIDEBARS.with(|windows| windows.borrow().contains(owner.label())) {
             super::window_controls::set_tucked(&owner, !shown);
             if shown {

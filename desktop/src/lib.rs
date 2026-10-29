@@ -5477,7 +5477,7 @@ fn reach_zones(caller: WebviewWindow, zones: Vec<ZoneSpec>) {
 }
 
 /// rice fork: the window-controls group came down or went up in hover mode;
-/// the native buttons slide with it, in the same frame.
+/// the native buttons slide together with it.
 #[tauri::command]
 #[specta::specta]
 fn window_group(caller: WebviewWindow, down: bool) {

@@ -547,7 +547,7 @@ export const commands = {
 	reachZones: (zones: ZoneSpec[]) => __TAURI_INVOKE<void>("reach_zones", { zones }),
 	/**
 	 *  rice fork: the window-controls group came down or went up in hover mode;
-	 *  the native buttons slide with it, in the same frame.
+	 *  the native buttons slide together with it.
 	 */
 	windowGroup: (down: boolean) => __TAURI_INVOKE<void>("window_group", { down }),
 	sidebarResize: (width: number | null, enabled: boolean, revision: number | null) => __TAURI_INVOKE<boolean>("sidebar_resize", { width, enabled, revision }),
