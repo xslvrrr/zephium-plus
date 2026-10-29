@@ -23,7 +23,7 @@ use zephium_work_composition::page_assist::port::{
     FieldKind, ReadFailure, Role, StepFailure, StepRequest,
 };
 
-use crate::page_assist::{mcp_active, mcp_ports, mcp_reader, mcp_tabs};
+use crate::page_assist::{mcp_active, mcp_outside_input, mcp_ports, mcp_reader, mcp_tabs};
 
 const MAX_AUDIT_BYTES: u64 = 1024 * 1024;
 /// The longest page text a prompt shows, in characters.
@@ -120,8 +120,9 @@ impl DesktopBackend {
     fn readable(&self, tab: &str) -> Result<u64, Refusal> {
         let (page, _) = mcp_ports().ok_or(Refusal::Failed)?;
         let facts = page.facts(tab).ok_or(Refusal::NotFound)?;
+        // A private tab is never reachable, so it reads as no tab at all.
         if facts.private {
-            return Err(Refusal::Private);
+            return Err(Refusal::NotFound);
         }
         let site = facts
             .url
@@ -225,7 +226,7 @@ impl Backend for DesktopBackend {
             .map(|(id, title, url, space)| TabInfo {
                 active: !private && active.as_deref() == Some(id.as_str()),
                 id,
-                title,
+                title: fence(&title),
                 url,
                 space: Some(space),
             })
@@ -298,8 +299,9 @@ impl Backend for DesktopBackend {
     fn navigate(&self, tab: &str, url: &str) -> Result<(), Refusal> {
         let (page, tabs) = mcp_ports().ok_or(Refusal::Failed)?;
         let facts = page.facts(tab).ok_or(Refusal::NotFound)?;
+        // A private tab is never reachable, so it reads as no tab at all.
         if facts.private {
-            return Err(Refusal::Private);
+            return Err(Refusal::NotFound);
         }
         tabs.navigate(&facts.profile, tab, url)
             .then_some(())
@@ -340,6 +342,8 @@ impl Backend for DesktopBackend {
             let epoch = self.readable(&step.tab)?;
             let (page, _) = mcp_ports().ok_or(Refusal::Failed)?;
             let request = Self::step_request(step)?;
+            // A running Ask reply on this tab pauses, as for any outside input.
+            mcp_outside_input(&step.tab);
             page.act(&step.tab, epoch, &request)
                 .await
                 .map_err(step_failure)

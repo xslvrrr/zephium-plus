@@ -333,6 +333,15 @@ mod product {
         reader_needed(|needs| needs.mcp = on);
     }
 
+    /// rice fork: an MCP step on `tab` is outside input to Ask, so a reply
+    /// acting there pauses as it does when the person takes over.
+    #[cfg(unix)]
+    pub(crate) fn mcp_outside_input(tab: &str) {
+        if let Some(service) = service() {
+            service.human_input(tab);
+        }
+    }
+
     /// Turns the Browse reader on or off in every view. It never runs on a
     /// bank, payment, health or government site.
     fn reader_switch(on: bool) {
@@ -1228,7 +1237,7 @@ pub(crate) use product::{
     hosted_charged, hosted_sourced, install, observe_items, observe_tab, preference_changed,
 };
 #[cfg(all(unix, feature = "work-product"))]
-pub(crate) use product::{mcp_active, mcp_ports, mcp_reader, mcp_tabs};
+pub(crate) use product::{mcp_active, mcp_outside_input, mcp_ports, mcp_reader, mcp_tabs};
 
 #[cfg(not(feature = "work-product"))]
 pub(crate) fn observe_items(_state: &zephium_ipc::ItemsState) {}
