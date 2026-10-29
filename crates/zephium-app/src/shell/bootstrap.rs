@@ -271,7 +271,7 @@ impl Shell {
             .windows
             .create(WindowKind::Main, profile, space, self.pending_size);
         if let Some(win) = self.windows.get_mut(window) {
-            win.metrics.toolbar = self.toolbar_band;
+            win.metrics.spans = self.chrome_spans;
         }
         // Starting with a new tab, or with pages, keeps every restored tab
         // where it was and loads none of them. A link that launched the browser is its own

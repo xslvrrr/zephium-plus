@@ -17,9 +17,10 @@ pub struct Metrics {
     pub gap: f64,
     /// Optional reserved title band. Native overlay controls reserve no space.
     pub caption: f64,
-    /// rice fork: the top toolbar band above the page. With it, the chrome
-    /// spans the window so the band can run across the top of the content.
-    pub toolbar: f64,
+    /// rice fork: the chrome spans the window beneath the page in every
+    /// shape, so it can come over the page anywhere (the notch toolbar).
+    /// The page keeps upstream's rect.
+    pub spans: bool,
     /// The column is put away until the pointer asks for it.
     pub sidebar_hidden: bool,
 }
@@ -31,14 +32,11 @@ impl Default for Metrics {
             padding: 8.0,
             gap: 8.0,
             caption: 0.0,
-            toolbar: 0.0,
+            spans: false,
             sidebar_hidden: false,
         }
     }
 }
-
-/// rice fork: the top toolbar band's height, matching `--rice-toolbar-height`.
-pub const TOOLBAR_BAND: f64 = 44.0;
 
 /// The sidebar's admitted width range, spanning the compact rail through the
 /// widest expanded column.
@@ -147,12 +145,9 @@ fn sidebar(win: Size, m: Metrics, content_present: bool) -> Layout {
 
     // Hidden, the column keeps its width beneath the page, so it can come
     // over it without laying out again, and the page starts at the gutter.
-    // rice fork: the band applies only while the column is shown; hidden,
-    // the shape is exactly upstream's.
-    let toolbar = if m.sidebar_hidden { 0.0 } else { m.toolbar };
-    let chrome_width = if toolbar > 0.0 {
-        // rice fork: the band runs over the content column, so the chrome
-        // spans the window. The page view stacks above it inside its rect.
+    // rice fork: in notch mode the chrome spans the window beneath the page;
+    // the page's own rect is upstream's in every shape.
+    let chrome_width = if m.spans {
         win.width
     } else if m.sidebar_hidden {
         (p + m.sidebar_width + HIDDEN_SHADOW_REACH).min(win.width)
@@ -165,7 +160,7 @@ fn sidebar(win: Size, m: Metrics, content_present: bool) -> Layout {
     } else {
         p + m.sidebar_width + m.gap
     };
-    let top = m.caption + toolbar;
+    let top = m.caption;
     let content = Rect::new(content_x, p + top, win.width - content_x - p, inner_h - top);
     Layout {
         chrome,
@@ -192,7 +187,7 @@ mod tests {
         padding: 8.0,
         gap: 8.0,
         caption: 0.0,
-        toolbar: 0.0,
+        spans: false,
         sidebar_hidden: false,
     };
 
@@ -267,6 +262,25 @@ mod tests {
         assert_eq!(content, Rect::new(256.0, 8.0, 936.0, 784.0));
         // chrome right edge + gap == content left edge: no overlap.
         assert_eq!(l.chrome.x + l.chrome.width + M.gap, content.x);
+    }
+
+    #[test]
+    fn spanning_chrome_covers_the_window_and_leaves_the_page_upstreams() {
+        let win = Size::new(1200.0, 800.0);
+        let spans = Metrics { spans: true, ..M };
+        for hidden in [false, true] {
+            let plain = Metrics {
+                sidebar_hidden: hidden,
+                ..M
+            };
+            let wide = Metrics {
+                sidebar_hidden: hidden,
+                ..spans
+            };
+            let l = compute(win, Mode::Sidebar, wide, true);
+            assert_eq!(l.chrome, Rect::new(0.0, 0.0, 1200.0, 800.0));
+            assert_eq!(l.content, compute(win, Mode::Sidebar, plain, true).content);
+        }
     }
 
     #[test]

@@ -2,7 +2,6 @@
    semantic radius tokens, never these names directly. */
 :root {
   --rice-radius: 12px;
-  --rice-toolbar-height: 44px;
 
   /* One radius drives the page frame and the cards around it, so the content
      view's native corner (set to the same value natively) and the chrome

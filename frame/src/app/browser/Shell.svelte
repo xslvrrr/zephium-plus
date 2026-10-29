@@ -12,7 +12,6 @@
   import LazyView from "$shared/ui/LazyView";
   import type { TabView } from "$shared/ipc/bindings";
   import { newTabImage } from "$session/newtab-background.svelte";
-  import Toolbar from "./Toolbar.svelte";
   import SkyLight from "./SkyLight.svelte";
   import RenderBoundary from "$shared/ui/RenderBoundary";
   import { loadClearSiteData, loadSettings } from "$features/settings";
@@ -36,7 +35,6 @@
   import * as tabDrag from "$session/tab-drag.svelte";
   import { requestTab } from "$session/work-tab.svelte";
   import { expanded as sidebarWidth } from "$session/sidebar-mode.svelte";
-  import { toolbarBand as riceToolbarBand } from "$session/rice-toolbar.svelte";
   import { uiCommands as ui } from "$domain/ui-commands";
   import { untrack, type Component, type Snippet } from "svelte";
   import { clearRequest } from "$domain/site-data";
@@ -69,7 +67,6 @@
     McpIndicator,
     SidebarNotice,
     UtilityTray,
-    ToolbarUtilities,
   } from "$features/sidebar";
   import { IS_WINDOWS } from "$shared/platform";
   import { installChromeMenu } from "$shared/lib/chrome-menu";
@@ -141,9 +138,6 @@
   });
   let splitting = $state(false);
   let inWork = $derived(browserPage.currentPage() === "work");
-  // rice fork: in top mode the band holds the one address field; Work and a
-  // hidden sidebar keep the sidebar's, because the band is not drawn there.
-  let toolbarBand = $derived(riceToolbarBand());
   // Settings stands beside the rail the way a tool panel does.
   let paneled = $derived(
     toolHost.activeTool() !== null || browserPage.currentPage() === "settings",
@@ -331,7 +325,7 @@
   }
 </script>
 
-{#snippet addressBlock(compact: boolean, band: boolean)}
+{#snippet addressBlock(compact: boolean)}
   <AddressField {compact}>
     {#snippet trailing(page)}
       {@const label =
@@ -340,21 +334,16 @@
           : page.warning
             ? m.site_info_label_status({ status: page.warning })
             : m.site_info_label()}
-      <!-- rice fork: in the band the utilities open the native sidebar menu,
-           because a DOM panel there would fall under the page view. -->
-      {#if band}<ToolbarUtilities {label} warning={page?.warning} />{:else}<UtilityTray
-          {label}
-          warning={page?.warning}
-        >
-          {#snippet children(open)}
-            {#snippet siteHead(name: string | null, control?: Snippet)}
-              <SiteHead {page} label={name}>{@render control?.()}</SiteHead>
-            {/snippet}
-            <BlockerShield {open} head={page ? siteHead : undefined} />
-            <ExtensionsSection />
-            <SiteDetails {page} {open} />
+      <UtilityTray {label} warning={page?.warning}>
+        {#snippet children(open)}
+          {#snippet siteHead(name: string | null, control?: Snippet)}
+            <SiteHead {page} label={name}>{@render control?.()}</SiteHead>
           {/snippet}
-        </UtilityTray>{/if}
+          <BlockerShield {open} head={page ? siteHead : undefined} />
+          <ExtensionsSection />
+          <SiteDetails {page} {open} />
+        {/snippet}
+      </UtilityTray>
     {/snippet}
   </AddressField>
 {/snippet}
@@ -382,12 +371,12 @@
   <Sidebar
     >{#snippet browserBody(compact)}
       {#if compact && (inWork || paneled)}
-        {#if !inWork}{#if !toolbarBand}<AddressField {compact} />{/if}<StoreInstallRail />{/if}
+        {#if !inWork}<AddressField {compact} /><StoreInstallRail />{/if}
         {#if paneled && IS_WINDOWS}
           {#if browserPage.currentPage() === "settings"}<ModeTabs compact standalone />{/if}
           <div class="rail-search"><SidebarSearch /></div>
         {:else if paneled}<ModeTabs compact standalone />{/if}
-      {:else if compact}{#if !toolbarBand}<AddressField {compact} />{/if}<StoreInstallRail />
+      {:else if compact}<AddressField {compact} /><StoreInstallRail />
       {:else if !incognito && preferences.enabled("work")}<div class="sidebar-head">
           <ModeTabs />
         </div>{/if}
@@ -402,7 +391,7 @@
             whole column, field included; the tray rides the field itself,
             because everything in it acts on the page the field names.
           -->
-            {#if !toolbarBand}{@render addressBlock(compact, false)}{/if}
+            {@render addressBlock(compact)}
             <!-- Work floats its page over the whole window, sidebar included. -->
             {#if !inWork}<SidebarPagePermission />{/if}
 
@@ -502,7 +491,6 @@
       >{/snippet}</Sidebar
   >
   <div class="stage-column">
-    {#if toolbarBand}<Toolbar>{@render addressBlock(false, true)}</Toolbar>{/if}
     {#if browserPage.navigationFailed()}<div class="navigation-error" role="alert">
         {m.browser_nav_failed()}
       </div>{/if}

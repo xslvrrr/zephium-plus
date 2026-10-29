@@ -895,14 +895,10 @@ impl Shell {
         }
         self.tab_preferences.apply(&key, &value);
         if key == "ui.toolbar" {
-            self.toolbar_band = if value == "top" {
-                zephium_core::layout::TOOLBAR_BAND
-            } else {
-                0.0
-            };
+            self.chrome_spans = value == "top";
             for win in self.windows.iter_mut() {
                 if matches!(win.kind, zephium_core::windows::WindowKind::Main) {
-                    win.metrics.toolbar = self.toolbar_band;
+                    win.metrics.spans = self.chrome_spans;
                 }
             }
             let _ = self.relayout();

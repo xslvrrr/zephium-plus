@@ -18,7 +18,6 @@
     sidebarResizeSettlement,
     toggleMode,
   } from "$session/sidebar-mode.svelte";
-  import { toolbarBand as riceToolbarBand } from "$session/rice-toolbar.svelte";
   import { commands } from "$shared/ipc/bindings";
   import { newTabImage } from "$session/newtab-background.svelte";
   import { FROSTS, scene } from "$shared/sky";
@@ -492,7 +491,6 @@
       launcher={paneled}
       ontoggle={toggleShape}
       pageControls={!inWork}
-      navControls={!riceToolbarBand()}
     />{/if}
   <div
     bind:this={columns}

@@ -233,8 +233,9 @@ pub struct Shell {
     sources: page_source::SourceState,
     search: SearchState,
     tab_preferences: tabs::TabPreferences,
-    /// rice fork: the toolbar band every window gets, from `ui.toolbar`.
-    toolbar_band: f64,
+    /// rice fork: whether every window's chrome spans the window, from
+    /// `ui.toolbar`.
+    chrome_spans: bool,
     proxy: network::ProxyPreference,
     presentation: PresentationState,
     zoom: ZoomState,
@@ -491,11 +492,7 @@ impl Shell {
                 ..SearchState::default()
             },
             tab_preferences: tabs::TabPreferences::load(&*store),
-            toolbar_band: if store.app_setting("ui.toolbar").as_deref() == Some("top") {
-                zephium_core::layout::TOOLBAR_BAND
-            } else {
-                0.0
-            },
+            chrome_spans: store.app_setting("ui.toolbar").as_deref() == Some("top"),
             proxy: network::ProxyPreference::load(&*store),
             presentation: PresentationState::default(),
             zoom: ZoomState::load(&*store),

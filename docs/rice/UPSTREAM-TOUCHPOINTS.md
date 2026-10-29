@@ -11,15 +11,14 @@ Rebase conflicts appear only in these files.
 | `frame/src/styles/global.css` | One `@import` of `axes/rice.css` after the last axis import |
 | `frame/src/domain/appearance/theme.ts` | `applyRice`: `data-toolbar`, `--rice-radius` (the texture is drawn natively, `desktop/src/platform/macos/rice_backdrop.rs`) |
 | `frame/src/app/browser/BrowserApp.svelte` | One `$effect` calling `theme.applyRice` from `ui.toolbar` and `ui.radius`; `void initMcp()` beside `focus.init()` (the MCP client list session) |
-| `frame/src/app/browser/Shell.svelte` | The address block is one `addressBlock` snippet, rendered once: in the sidebar, or in the top `Toolbar` while `$session/rice-toolbar` `toolbarBand()` holds (there its utilities are `ToolbarUtilities`, the native sidebar menu); compact address guarded while the band shows; renders `<McpIndicator />` before `<SidebarNotice />` |
-| `crates/zephium-core/src/layout.rs` | `Metrics.toolbar`, `TOOLBAR_BAND` (own doc, above `MIN_SIDEBAR_WIDTH`'s), and `sidebar()` reserving the band above the page while the sidebar is shown; hidden, the shape is upstream's exactly |
+| `frame/src/app/browser/Shell.svelte` | The address block is one `addressBlock` snippet (the sidebar renders it once, as upstream's inline block); renders `<McpIndicator />` before `<SidebarNotice />` |
+| `crates/zephium-core/src/layout.rs` | `Metrics.spans`: the chrome spans the window beneath the page in every shape (`sidebar()` chrome width); the page's rect is upstream's |
 | `crates/zephium-core/src/windows.rs` | `Windows::iter_mut` |
-| `crates/zephium-app/src/shell/mod.rs` | `toolbar_band` field, seeded from `ui.toolbar` |
-| `crates/zephium-app/src/shell/bootstrap.rs` | Seeds `metrics.toolbar` on each new Main window |
-| `crates/zephium-app/src/shell/operations.rs` | `ui.toolbar` setting updates all Main windows and relayouts |
-| `frame/src/features/sidebar/components/SidebarHeader.svelte` | Nav buttons extracted to `NavControls.svelte` (an extraction: upstream edits to the nav buttons conflict here and must be ported by hand into `NavControls`); `navControls` prop hides only them; the sidebar menu's opening and its `extension.action=` handling moved to `lib/sidebar-menu.ts`, shared with the band's `ToolbarUtilities` |
-| `frame/src/features/sidebar/index.ts` | Exports `NavControls` and `ToolbarUtilities`; exports `McpIndicator` |
-| `frame/src/features/sidebar/components/Sidebar.svelte` | `navControls={!toolbarBand()}` on `SidebarHeader`; `pageControls` stays upstream's, so the rail menu remains in top mode |
+| `crates/zephium-app/src/shell/mod.rs` | `chrome_spans` field, seeded from `ui.toolbar` |
+| `crates/zephium-app/src/shell/bootstrap.rs` | Seeds `metrics.spans` on each new Main window |
+| `crates/zephium-app/src/shell/operations.rs` | `ui.toolbar` setting sets `chrome_spans`, updates all Main windows' `metrics.spans` and relayouts |
+| `frame/src/features/sidebar/components/SidebarHeader.svelte` | Nav buttons extracted to `NavControls.svelte` (an extraction: upstream edits to the nav buttons conflict here and must be ported by hand into `NavControls`); `navControls` prop hides only them; the sidebar menu's opening and its `extension.action=` handling moved to `lib/sidebar-menu.ts` |
+| `frame/src/features/sidebar/index.ts` | Exports `McpIndicator` |
 | `desktop/src/platform/window_controls.rs` | (Task 6) `bare` ivar skips resting discs; `set_bare` |
 | `desktop/src/platform/macos.rs` | (Task 6) applies `ui.window-controls` at install; `window_controls_set_bare` wrapper; `pub mod rice_backdrop;` and `rice_backdrop::install(window)` in `init` after the material |
 | `desktop/src/lib.rs` | `mod rice_theme;` and `rice_theme::start(data_dir, shell)` after `external_links::adopt`; seeds `ui.radius` (`set_page_radius`) after `APP_STORE.set`; `preference.ui.window-controls=` and `preference.ui.radius=` arms in the projection hook; a macOS arm for `preference.ui.texture=` / `preference.ui.texture-opacity=` (`rice_backdrop::follow`, then `refresh_all` on the main thread), and `refresh_all` queued after `apply_native_material` in the `preference.ui.material=` arm; MCP (unix + `work-product`): `mod mcp_server;`, `app_store()` beside `app_setting`, `mcp_server::set_enabled` after `page_assist::install` when `mcp.enabled` is on, a `preference.mcp.enabled=` arm in the projection hook, `mcp_server::shutdown()` on `RunEvent::Exit` |
