@@ -1,9 +1,11 @@
 //! rice fork: `rice-theme.json` beside the store, written by `rice theme
 //! apply`. Each field present is applied as a preference at launch and on
 //! every change of the file; a field left out leaves its preference alone.
-//! A malformed file is logged and ignored whole.
+//! A malformed file is logged and ignored whole; a field this build does not
+//! know is logged and ignored alone, so a newer rice never voids the file.
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use serde::Deserialize;
 use zephium_app::{Command, Handle};
@@ -14,15 +16,27 @@ const PROFILE_BUDGET: Duration = Duration::from_secs(60);
 const MAX_TEXTURE_BYTES: u64 = 8 * 1024 * 1024;
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct RiceTheme {
     accent: Option<String>,
+    /// An absolute PNG path; `""` clears the texture.
     texture: Option<PathBuf>,
     texture_opacity: Option<u8>,
     radius: Option<u8>,
     toolbar: Option<String>,
     window_controls: Option<String>,
     newtab_mark: Option<bool>,
+    /// Fields this build does not know, kept only to name them in the log.
+    #[serde(flatten)]
+    unknown: BTreeMap<String, serde_json::Value>,
+}
+
+/// The last texture file read: its path, modification time and length, and
+/// the digest of its bytes. The same file is not read or hashed again.
+pub(crate) struct TextureMemo {
+    path: PathBuf,
+    modified: SystemTime,
+    len: u64,
+    digest: String,
 }
 
 fn read(path: &Path) -> Option<RiceTheme> {
@@ -38,8 +52,17 @@ fn read(path: &Path) -> Option<RiceTheme> {
             return None;
         }
     };
-    match serde_json::from_str(&text) {
-        Ok(theme) => Some(theme),
+    match serde_json::from_str::<RiceTheme>(&text) {
+        Ok(theme) => {
+            if !theme.unknown.is_empty() {
+                let names: Vec<&str> = theme.unknown.keys().map(String::as_str).collect();
+                crate::write_diagnostic(format_args!(
+                    "rice-theme: unknown fields ignored: {}",
+                    names.join(", ")
+                ));
+            }
+            Some(theme)
+        }
         Err(error) => {
             crate::write_diagnostic(format_args!("rice-theme: malformed, ignored: {error}"));
             None
@@ -98,19 +121,19 @@ fn current_profile(shell: &Handle) -> Option<zephium_core::ids::ProfileId> {
     }
 }
 
-fn texture_digest(shell: &Handle, path: &Path) -> Option<String> {
-    let bytes = match std::fs::metadata(path) {
-        Ok(metadata) if metadata.is_file() && metadata.len() <= MAX_TEXTURE_BYTES => {
-            match std::fs::read(path) {
-                Ok(bytes) => bytes,
-                Err(error) => {
-                    crate::write_diagnostic(format_args!(
-                        "rice-theme: texture unreadable: {error}"
-                    ));
-                    return None;
-                }
-            }
-        }
+/// The digest the store gives these bytes: lowercase hex SHA-256, as
+/// `zephium_store::hub::media::admit` computes it.
+fn media_digest(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+fn texture_digest(shell: &Handle, path: &Path, memo: &mut Option<TextureMemo>) -> Option<String> {
+    let metadata = match std::fs::metadata(path) {
+        Ok(metadata) if metadata.is_file() && metadata.len() <= MAX_TEXTURE_BYTES => metadata,
         Ok(_) => {
             crate::write_diagnostic(format_args!("rice-theme: texture is not a file or too big"));
             return None;
@@ -120,9 +143,42 @@ fn texture_digest(shell: &Handle, path: &Path) -> Option<String> {
             return None;
         }
     };
+    let stored = crate::app_setting("ui.texture");
+    let modified = metadata.modified().ok();
+    // The same file as last time, already the stored texture: nothing to do.
+    if let (Some(known), Some(modified)) = (memo.as_ref(), modified) {
+        if known.path == path
+            && known.modified == modified
+            && known.len == metadata.len()
+            && stored.as_deref() == Some(known.digest.as_str())
+        {
+            return Some(known.digest.clone());
+        }
+    }
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            crate::write_diagnostic(format_args!("rice-theme: texture unreadable: {error}"));
+            return None;
+        }
+    };
     if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         crate::write_diagnostic(format_args!("rice-theme: texture is not a PNG"));
         return None;
+    }
+    let digest = media_digest(&bytes);
+    if let Some(modified) = modified {
+        *memo = Some(TextureMemo {
+            path: path.to_owned(),
+            modified,
+            len: metadata.len(),
+            digest: digest.clone(),
+        });
+    }
+    // The store already holds these bytes as the texture; importing them
+    // again would only add another resource row.
+    if stored.as_deref() == Some(digest.as_str()) {
+        return Some(digest);
     }
     let Some(profile) = current_profile(shell) else {
         crate::write_diagnostic(format_args!(
@@ -162,7 +218,7 @@ fn texture_digest(shell: &Handle, path: &Path) -> Option<String> {
     }
 }
 
-fn apply(shell: &Handle, path: &Path) {
+fn apply(shell: &Handle, path: &Path, memo: &mut Option<TextureMemo>) {
     let Some(theme) = read(path) else {
         return;
     };
@@ -190,9 +246,9 @@ fn apply(shell: &Handle, path: &Path) {
         );
     }
     if let Some(texture) = theme.texture.as_deref() {
-        // Re-admitting identical bytes yields the same digest, so an
-        // unchanged texture writes nothing.
-        if let Some(digest) = texture_digest(shell, texture) {
+        if texture.as_os_str().is_empty() {
+            set(shell, "ui.texture", String::new());
+        } else if let Some(digest) = texture_digest(shell, texture, memo) {
             set(shell, "ui.texture", digest);
         }
     }
@@ -204,7 +260,8 @@ pub(crate) fn start(dir: PathBuf, shell: Handle) {
         .name("rice-theme".into())
         .spawn(move || {
             let path = dir.join(FILE);
-            apply(&shell, &path);
+            let mut memo = None;
+            apply(&shell, &path, &mut memo);
             let (sender, events) = std::sync::mpsc::channel();
             let mut watcher = match notify::recommended_watcher(sender) {
                 Ok(watcher) => watcher,
@@ -229,7 +286,7 @@ pub(crate) fn start(dir: PathBuf, shell: Handle) {
                     // Let a burst of writes from one apply settle first.
                     std::thread::sleep(Duration::from_millis(150));
                     while events.try_recv().is_ok() {}
-                    apply(&shell, &path);
+                    apply(&shell, &path, &mut memo);
                 }
             }
         })

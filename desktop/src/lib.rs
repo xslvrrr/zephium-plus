@@ -6528,7 +6528,9 @@ pub fn run() {
                 APP_STORE.set(store.clone()).map_err(|_| {
                     std::io::Error::other("process-global application store is already installed")
                 })?;
-                if let Some(radius) = app_setting("ui.radius").and_then(|value| value.parse::<f64>().ok()) {
+                if let Some(radius) =
+                    app_setting("ui.radius").and_then(|value| value.parse::<f64>().ok())
+                {
                     zephium_engine::set_page_radius(radius);
                 }
                 for (key, value) in

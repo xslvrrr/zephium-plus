@@ -22,14 +22,13 @@ Rebase conflicts appear only in these files.
 | `frame/src/features/sidebar/components/Sidebar.svelte` | `navControls={!toolbarBand()}` on `SidebarHeader`; `pageControls` stays upstream's, so the rail menu remains in top mode |
 | `desktop/src/platform/window_controls.rs` | (Task 6) `bare` ivar skips resting discs; `set_bare` |
 | `desktop/src/platform/macos.rs` | (Task 6) applies `ui.window-controls` at install; `window_controls_set_bare` wrapper |
-| `desktop/src/lib.rs` | (Task 6) `preference.ui.window-controls=` arm in projection hook |
+| `desktop/src/lib.rs` | `mod rice_theme;` and `rice_theme::start(data_dir, shell)` after `external_links::adopt`; seeds `ui.radius` (`set_page_radius`) after `APP_STORE.set`; `preference.ui.window-controls=` and `preference.ui.radius=` arms in the projection hook |
 | `crates/zephium-engine/src/lib.rs` | (Task 7) `PAGE_RADIUS` static with `set_page_radius` / `page_radius` |
 | `crates/zephium-engine/src/host/construction.rs` | (Task 7) macOS page `configure` reads `crate::page_radius()` instead of `12.0` |
-| `desktop/src/lib.rs` | (Task 7) seeds `ui.radius` after `APP_STORE.set`; `preference.ui.radius=` arm in projection hook |
 | `frame/src/features/newtab/components/NewTab.svelte` | (Task 8) `mark` wordmark mode: renders `RiceMark`, hides greeting, clock and figures |
 | `frame/src/features/settings/components/sections/NewTabPage.svelte` | (Task 8) wordmark Switch becomes a three-way Select |
 | `frame/messages/en.json` | (Task 8) `ntp_wordmark_mark`, `ntp_wordmark_none` |
-| `desktop/src/lib.rs` | (Task 9) `mod rice_theme;` and `rice_theme::start(data_dir, shell)` after `external_links::adopt` |
-| `desktop/Cargo.toml` | (Task 9) `notify = =8.2.0` (macos_fsevent), same pin as zephium-notes |
+| `desktop/Cargo.toml` | `notify = =8.2.0` (macos_fsevent), same pin as zephium-notes; `sha2 = =0.10.9`, the workspace pin, for the texture's media digest |
+| `Cargo.lock` | `zephium-desktop` gains `notify` and `sha2 0.10.9` in its dependency list (no new packages) |
 | `frame/src/features/newtab/components/NewTab.svelte` | (Task 11) `texture` snippet drawn over the page's ground; `mark` mode drops the notch field, account and customize controls |
 | `frame/src/features/newtab/lib/layout.ts` | (Task 11) `notched` option: a page without its field cuts no notch |
