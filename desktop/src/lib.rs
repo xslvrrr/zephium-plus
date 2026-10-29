@@ -6988,6 +6988,16 @@ pub fn run() {
                     }
                     if let Some(value) = id.strip_prefix("preference.ui.material=") {
                         apply_native_material(&emit_handle, value);
+                        // rice fork: the texture backdrop shows only over a
+                        // material; queued after the reinstall, so it reads
+                        // the tier just installed.
+                        #[cfg(target_os = "macos")]
+                        {
+                            let app = emit_handle.clone();
+                            let _ = emit_handle.run_on_main_thread(move || {
+                                platform::imp::rice_backdrop::refresh_all(&app);
+                            });
+                        }
                     }
                     #[cfg(target_os = "macos")]
                     if let Some(value) = id.strip_prefix("preference.ui.window-controls=") {

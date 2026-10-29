@@ -151,6 +151,10 @@ raising the chrome never moves it.
   empty, the digest is unreadable, or forced colours / Increase Contrast
   apply.
 - `RiceTexture.svelte` and its two uses in `Shell.svelte` are removed.
+- Over the Solid material (`ui.material=none`) or Reduce Transparency the
+  backdrop is cleared: the chrome's opaque ground covers it.
+- In `ui.toolbar=sidebar` the new tab keeps upstream's sky ground, without
+  the texture.
 
 ### 1.7 Window-controls group details
 

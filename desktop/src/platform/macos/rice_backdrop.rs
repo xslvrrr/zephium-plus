@@ -9,6 +9,10 @@
 //! same way), while the chrome and the engine's stages are added on top, and
 //! raising the chrome only swaps it with a stage. So once in place, the
 //! backdrop stays between them however the views around it change.
+//!
+//! The texture shows only over a native material: with the Solid material
+//! (`ui.material=none`) or Reduce Transparency the chrome paints its opaque
+//! ground over the whole window, so the backdrop is cleared and never read.
 
 use std::cell::{Cell, RefCell};
 use std::ptr::{null_mut, NonNull};
@@ -33,6 +37,9 @@ use tauri::{AppHandle, Manager, WebviewWindow};
 const MATERIAL_TAGS: [isize; 2] = [91_376_254, 96_945_937];
 /// The frame's default for `ui.texture-opacity`.
 const DEFAULT_OPACITY: u8 = 15;
+/// The corner `material.rs` gives the window's material (vibrancy, glass and
+/// the tint wash), so the texture never paints into the window's corners.
+const CORNER_RADIUS: f64 = 12.0;
 
 /// The texture and its strength as last projected. A change arrives as a
 /// projection, possibly ahead of the store's write, so each shadows the
@@ -91,6 +98,7 @@ define_class!(
                 layer.setContents(contents);
                 layer.setContentsGravity(kCAGravityResizeAspectFill);
             }
+            layer.setCornerRadius(CORNER_RADIUS);
             layer.setMasksToBounds(true);
             layer.setOpacity(self.ivars().opacity.get());
         }
@@ -124,8 +132,13 @@ impl RiceBackdrop {
         ivars.image.replace(None);
         ivars.shown.replace(String::new());
         ivars.wanted.replace(String::new());
+        // A hidden view is not displayed, so `updateLayer` would never let
+        // go of the picture; release it here.
+        if let Some(layer) = self.layer() {
+            // SAFETY: nil is a valid layer contents.
+            unsafe { layer.setContents(None) };
+        }
         self.setHidden(true);
-        self.setNeedsDisplay(true);
     }
 }
 
@@ -212,6 +225,15 @@ fn wanted() -> Option<(String, u8)> {
     (opacity > 0).then_some((digest, opacity))
 }
 
+/// Whether the window is in the Solid tier, decided as `material::install`
+/// decides it: the person chose no material, Reduce Transparency is on, or
+/// no material could be installed.
+fn solid(window: &WebviewWindow) -> bool {
+    crate::material::preference() == crate::material::Preference::None
+        || NSWorkspace::sharedWorkspace().accessibilityDisplayShouldReduceTransparency()
+        || crate::material::current(window.label()) == crate::material::Material::None
+}
+
 /// Shows the current texture at the current strength, or nothing. A new
 /// digest is read off the main thread; the same digest only changes opacity.
 pub fn refresh(window: &WebviewWindow) {
@@ -221,7 +243,7 @@ pub fn refresh(window: &WebviewWindow) {
     let Some(backdrop) = content_view(window).and_then(|content| find(&content)) else {
         return;
     };
-    let Some((digest, opacity)) = wanted() else {
+    let Some((digest, opacity)) = (!solid(window)).then(wanted).flatten() else {
         backdrop.clear();
         return;
     };
@@ -319,8 +341,8 @@ thread_local! {
         const { RefCell::new(None) };
 }
 
-/// Increase Contrast can change at any time; follow it. One observer for the
-/// app, kept for its life.
+/// Increase Contrast and Reduce Transparency can change at any time; follow
+/// them. One observer for the app, kept for its life.
 fn observe_contrast(app: &AppHandle) {
     CONTRAST.with(|slot| {
         if slot.borrow().is_some() {
@@ -329,7 +351,13 @@ fn observe_contrast(app: &AppHandle) {
         let app = app.clone();
         let block = RcBlock::new(move |_: NonNull<NSNotification>| {
             let main = app.clone();
-            let _ = app.run_on_main_thread(move || refresh_all(&main));
+            // Two hops: the material's own observer reinstalls it from a
+            // main-thread task queued by this same notification, and the
+            // installed tier must be read after that task has run.
+            let _ = app.run_on_main_thread(move || {
+                let last = main.clone();
+                let _ = main.run_on_main_thread(move || refresh_all(&last));
+            });
         });
         let center = NSWorkspace::sharedWorkspace().notificationCenter();
         // SAFETY: the block captures only a Send handle and dispatches its
