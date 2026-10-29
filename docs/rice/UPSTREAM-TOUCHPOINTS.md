@@ -9,8 +9,8 @@ Rebase conflicts appear only in these files.
 | `crates/zephium-core/src/preferences.rs` | Rice preference keys (`ui.toolbar`, `ui.window-controls`, `ui.radius`, `ui.texture`, `ui.texture-opacity`) and `ui.newtab-wordmark` `mark` value |
 | `frame/src/domain/preferences/preferences.svelte.ts` | Frame defaults for the rice preference keys |
 | `frame/src/styles/global.css` | One `@import` of `axes/rice.css` after the last axis import |
-| `frame/src/domain/appearance/theme.ts` | `applyRice`: `data-toolbar`, `--rice-radius`, `--rice-texture-opacity` |
-| `frame/src/app/browser/BrowserApp.svelte` | One `$effect` calling `theme.applyRice` from the rice preferences |
+| `frame/src/domain/appearance/theme.ts` | `applyRice`: `data-toolbar`, `data-texture` (set only with a valid texture digest), `--rice-radius`, `--rice-texture-opacity` |
+| `frame/src/app/browser/BrowserApp.svelte` | One `$effect` calling `theme.applyRice` from the rice preferences, including whether `ui.texture` is a valid digest |
 | `frame/src/app/browser/Shell.svelte` | Renders `<RiceTexture />` next to `<SkyLight>` and `<RiceTexture fill="page" />` as NewTab's `texture` snippet. The address block is one `addressBlock` snippet, rendered once: in the sidebar, or in the top `Toolbar` while `$session/rice-toolbar` `toolbarBand()` holds (there its utilities are `ToolbarUtilities`, the native sidebar menu); compact address guarded while the band shows |
 | `crates/zephium-core/src/layout.rs` | `Metrics.toolbar`, `TOOLBAR_BAND` (own doc, above `MIN_SIDEBAR_WIDTH`'s), and `sidebar()` reserving the band above the page while the sidebar is shown; hidden, the shape is upstream's exactly |
 | `crates/zephium-core/src/windows.rs` | `Windows::iter_mut` |

@@ -94,6 +94,8 @@
     theme.applyRice({
       toolbar: preferences.value("ui.toolbar") === "top" ? "top" : "sidebar",
       radius: Number.isFinite(radius) ? radius : 12,
+      // The same rule RiceTexture draws by: a valid blob id.
+      texture: /^[0-9a-f]{64}$/u.test(preferences.value("ui.texture")),
       textureOpacity: Number.isFinite(opacity) ? opacity : 15,
     });
   });

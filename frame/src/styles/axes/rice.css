@@ -37,10 +37,10 @@
   );
 }
 
-/* The texture is a fixed, positioned layer at z-index 0. The sidebar is
-   already positioned and later in tree order, so it paints above it; the stage
-   column is not, so lift it. */
-:root .stage-column {
+/* With a texture set, the texture is a fixed, positioned layer at z-index 0
+   in the shell. The stage column is not positioned, so lift it above the
+   layer. Without a texture nothing changes upstream's stacking. */
+:root[data-texture] .shell > .stage-column {
   position: relative;
   z-index: 1;
 }
