@@ -42,7 +42,8 @@ pub fn set_reduce_motion(reduce: bool) {
     REDUCE_MOTION.store(reduce, Ordering::Relaxed);
 }
 
-fn calm() -> bool {
+// rice fork: shared with the window-controls group's slide.
+pub(crate) fn calm() -> bool {
     REDUCE_MOTION.load(Ordering::Relaxed)
         || NSWorkspace::sharedWorkspace().accessibilityDisplayShouldReduceMotion()
 }

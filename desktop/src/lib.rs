@@ -1839,6 +1839,7 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             sidebar_peek,
             chrome_regions,
             reach_zones,
+            window_group,
             sidebar_resize,
             sidebar_resize_guide,
             tab_drag_over,
@@ -5473,6 +5474,20 @@ fn reach_zones(caller: WebviewWindow, zones: Vec<ZoneSpec>) {
     platform::imp::reach_zones_set(&caller, zones);
     #[cfg(not(target_os = "macos"))]
     let _ = zones;
+}
+
+/// rice fork: the window-controls group came down or went up in hover mode;
+/// the native buttons slide with it, in the same frame.
+#[tauri::command]
+#[specta::specta]
+fn window_group(caller: WebviewWindow, down: bool) {
+    if !authorize(&caller, CallerPolicy::Main, "window_group") {
+        return;
+    }
+    #[cfg(target_os = "macos")]
+    platform::imp::window_group(&caller, down);
+    #[cfg(not(target_os = "macos"))]
+    let _ = down;
 }
 
 #[tauri::command]

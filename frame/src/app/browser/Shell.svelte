@@ -34,7 +34,7 @@
   import { selectionGlide } from "$features/tabs";
   import * as tabDrag from "$session/tab-drag.svelte";
   import { requestTab } from "$session/work-tab.svelte";
-  import { expanded as sidebarWidth } from "$session/sidebar-mode.svelte";
+  import { expanded as sidebarWidth, isCompact } from "$session/sidebar-mode.svelte";
   import { uiCommands as ui } from "$domain/ui-commands";
   import { tick, untrack, type Component, type Snippet } from "svelte";
   import { clearRequest } from "$domain/site-data";
@@ -68,7 +68,9 @@
     SidebarNotice,
     UtilityTray,
   } from "$features/sidebar";
-  import { IS_WINDOWS } from "$shared/platform";
+  import { IS_MAC, IS_WINDOWS } from "$shared/platform";
+  import { fullscreen } from "$shared/lib/fullscreen.svelte";
+  import WindowGroup from "./WindowGroup.svelte";
   import { installChromeMenu } from "$shared/lib/chrome-menu";
   import { tabs } from "$domain/tabs";
   import { preferences } from "$domain/preferences";
@@ -148,6 +150,18 @@
     toolHost.activeTool() !== null || browserPage.currentPage() === "settings",
   );
   let incognito = $derived(tabs.profile()?.kind === "incognito");
+  // rice fork: with the window controls on hover, the lights and the shape
+  // toggle form one group at the window's corner while the lights are there.
+  // It draws the toggle only where the sidebar's head would: not beside a
+  // tool or Settings, and not on the rail of Work, Tasks and Notes.
+  let grouped = $derived(
+    IS_MAC && !fullscreen() && preferences.value("ui.window-controls") === "hover",
+  );
+  let groupToggle = $derived(
+    !paneled &&
+      !isCompact() &&
+      !["work", "tasks", "notes"].includes(browserPage.currentPage() ?? ""),
+  );
   // The column's body settles in only when the environment changes, never on launch.
   let modeSwitched = $state(false);
   let shownMode: boolean | null = null;
@@ -577,6 +591,7 @@
           />{/snippet}</LazyView
       >{/snippet}</Sidebar
   >
+  {#if grouped}<WindowGroup toggle={groupToggle} newTab={newTabShown || chromePane} />{/if}
   <div class="stage-column" bind:this={stageColumn}>
     {#if notched}<Notch content={pageColumn} newTab={newTabShown || chromePane}
         >{#snippet address()}{@render addressBlock(false)}{/snippet}</Notch

@@ -545,6 +545,11 @@ export const commands = {
 	chromeRegions: (rects: RegionRect[]) => __TAURI_INVOKE<void>("chrome_regions", { rects }),
 	/**  rice fork: the zones whose reach the window reports to its chrome. */
 	reachZones: (zones: ZoneSpec[]) => __TAURI_INVOKE<void>("reach_zones", { zones }),
+	/**
+	 *  rice fork: the window-controls group came down or went up in hover mode;
+	 *  the native buttons slide with it, in the same frame.
+	 */
+	windowGroup: (down: boolean) => __TAURI_INVOKE<void>("window_group", { down }),
 	sidebarResize: (width: number | null, enabled: boolean, revision: number | null) => __TAURI_INVOKE<boolean>("sidebar_resize", { width, enabled, revision }),
 	sidebarResizeGuide: (width: number | null) => __TAURI_INVOKE<boolean>("sidebar_resize_guide", { width }),
 	tabDragOver: (x: number | null, y: number | null) => __TAURI_INVOKE<void>("tab_drag_over", { x, y }),

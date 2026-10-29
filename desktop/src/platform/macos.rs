@@ -104,9 +104,23 @@ struct PrivilegedDelegateState {
     _delegate: Retained<PrivilegedUIDelegate>,
 }
 
-/// rice fork: follows `ui.window-controls` live.
+/// rice fork: follows `ui.window-controls`, at install and live. Hover mode
+/// rests as nothing and starts with the group put away, which the frame's
+/// group brings down; shown mode keeps the controls in place.
 pub fn window_controls_set_bare(window: &WebviewWindow, bare: bool) {
     super::window_controls::set_bare(window, bare);
+    super::window_controls::set_group_down(window, !bare, false);
+}
+
+/// rice fork: the frame's window-controls group came down or went up; the
+/// buttons slide with it. Only hover mode has a group to follow.
+pub fn window_group(window: &WebviewWindow, down: bool) {
+    let owner = window.clone();
+    let _ = window.run_on_main_thread(move || {
+        if super::window_controls::is_bare(&owner) {
+            super::window_controls::set_group_down(&owner, down, true);
+        }
+    });
 }
 
 thread_local! {
@@ -286,7 +300,7 @@ pub fn init(window: &WebviewWindow) -> bool {
     // rice fork: the texture, above the material and below every webview.
     rice_backdrop::install(window);
     super::window_controls::install(window);
-    super::window_controls::set_bare(
+    window_controls_set_bare(
         window,
         crate::app_setting("ui.window-controls").as_deref() == Some("hover"),
     );

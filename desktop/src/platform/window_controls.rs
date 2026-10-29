@@ -13,6 +13,10 @@
 //! setting a titlebar button's alpha makes AppKit lay the titlebar out again,
 //! which discards Tao's inset and drops the controls back to AppKit's own
 //! position, a few points up and to the right.
+//!
+//! rice fork: in hover mode (`set_bare`) nothing rests in their place, and
+//! the window-controls group slides them down and up by their layers'
+//! `transform` (`set_group_down`), for the same reason never their frames.
 
 use std::cell::{Cell, RefCell};
 use std::ptr::{null_mut, NonNull};
@@ -37,7 +41,9 @@ use objc2_foundation::{
     NSNumber, NSObject, NSObjectProtocol, NSPoint, NSPointInRect, NSProcessInfo, NSRect,
     NSUnionRect,
 };
-use objc2_quartz_core::{CABasicAnimation, CAMediaTiming, CAMediaTimingFunction, CATransaction};
+use objc2_quartz_core::{
+    CABasicAnimation, CAMediaTiming, CAMediaTimingFunction, CATransaction, CATransform3D,
+};
 use tauri::WebviewWindow;
 
 /// The pointer lights the controls a little before it reaches them, so the
@@ -47,6 +53,15 @@ const APPROACH: f64 = 6.0;
 /// pointer grazing the corner does not make the controls flicker.
 const LIGHT_SECONDS: f64 = 0.14;
 const REST_SECONDS: f64 = 0.24;
+
+/// rice fork: how far above its place a put-away control waits: its own
+/// height and the titlebar's inset, so nothing of it shows.
+const GROUP_LIFT: f64 = 40.0;
+const GROUP_SECONDS: f64 = 0.18;
+
+fn group_slide() -> &'static objc2_foundation::NSString {
+    ns_string!("zephium.controls.group")
+}
 
 /// Measured from the controls of an inactive window on macOS 26: white at a
 /// sixth over a dark ground. On a light ground the same step is taken in ink.
@@ -68,6 +83,9 @@ pub struct Ivars {
     suspended: Cell<bool>,
     /// rice fork: rest as nothing at all rather than as unlit discs.
     bare: Cell<bool>,
+    /// rice fork: where the window-controls group was last asked to be. In
+    /// hover mode it, not the pointer, decides whether the buttons show.
+    group_down: Cell<bool>,
     observers: RefCell<Vec<Retained<ProtocolObject<dyn NSObjectProtocol>>>>,
     /// The browser window's chrome, told the moment fullscreen begins or
     /// ends so the room it keeps for the controls follows them at once.
@@ -140,14 +158,20 @@ define_class!(
             unsafe { msg_send![super(self), updateTrackingAreas] }
         }
 
+        // rice fork: in hover mode the group lights the buttons as it brings
+        // them down, so the pointer does not fade them on its own.
         #[unsafe(method(mouseEntered:))]
         fn mouse_entered(&self, _event: &NSEvent) {
-            self.light(true, true);
+            if !self.ivars().bare.get() {
+                self.light(true, true);
+            }
         }
 
         #[unsafe(method(mouseExited:))]
         fn mouse_exited(&self, _event: &NSEvent) {
-            self.light(false, true);
+            if !self.ivars().bare.get() {
+                self.light(false, true);
+            }
         }
 
         #[unsafe(method(viewDidChangeEffectiveAppearance))]
@@ -165,6 +189,7 @@ impl WindowControls {
             settled: Cell::new(false),
             suspended: Cell::new(false),
             bare: Cell::new(false),
+            group_down: Cell::new(true),
             observers: RefCell::new(Vec::new()),
             chrome: RefCell::new(None),
         });
@@ -251,6 +276,11 @@ impl WindowControls {
     /// areas miss the pointer leaving while the window is miniaturized or
     /// being closed, so this runs whenever the window comes back.
     fn resync(&self, animate: bool) {
+        // rice fork: in hover mode the group's place is the state to restore.
+        if self.ivars().bare.get() {
+            self.place_group(animate);
+            return;
+        }
         let Some(window) = self.window() else {
             return;
         };
@@ -259,12 +289,83 @@ impl WindowControls {
         self.light(inside, animate);
     }
 
+    /// rice fork: puts the buttons where the group was last asked to be:
+    /// down in their place, lit, or up out of the window and hidden once
+    /// there, so nothing invisible takes a click. A reversal mid-slide
+    /// continues from wherever the slide has got to.
+    fn place_group(&self, animate: bool) {
+        if self.ivars().suspended.get() {
+            return;
+        }
+        let down = self.ivars().group_down.get();
+        let bare = self.ivars().bare.get();
+        // Zephium's Reduce Motion as well as the system's, as the frame's
+        // half of the group reads both.
+        let duration = if animate && !crate::panel::calm() {
+            GROUP_SECONDS
+        } else {
+            0.0
+        };
+        let lift = if down { 0.0 } else { GROUP_LIFT };
+        let buttons = self.buttons();
+        // Already on their way up: the slide under way hides them as it ends.
+        if !down && duration > 0.0 && buttons.iter().any(|button| heading(button, lift)) {
+            return;
+        }
+        // Hover mode decides on its own; shown mode leaves a tucked window's
+        // corner empty, as `set_tucked` put it.
+        let show = down && (bare || !self.isHidden());
+        CATransaction::begin();
+        CATransaction::setDisableActions(true);
+        if !down {
+            let weak = Weak::from_retained(&self.retain());
+            let hide = RcBlock::new(move || {
+                let Some(view) = weak.load() else {
+                    return;
+                };
+                // Brought back down before the slide finished: they stay.
+                if view.ivars().group_down.get() || view.ivars().suspended.get() {
+                    return;
+                }
+                for button in view.buttons() {
+                    button.setHidden(true);
+                }
+                view.light(false, false);
+            });
+            // SAFETY: Core Animation calls the block on the main thread once
+            // this transaction's animations end or are removed; it holds the
+            // view weakly and re-reads the latest request.
+            unsafe { CATransaction::setCompletionBlock(Some(&hide)) };
+        }
+        for button in &buttons {
+            if show {
+                button.setHidden(false);
+            }
+            slide(button, lift, duration);
+        }
+        CATransaction::commit();
+        if !bare {
+            self.resync(animate);
+        } else if down {
+            self.light(true, false);
+        }
+    }
+
     fn suspend(&self, suspended: bool) {
         self.ivars().suspended.set(suspended);
         self.tell_chrome(suspended);
         if suspended {
             for button in self.buttons() {
                 fade(&button, 1.0, 0.0);
+                // rice fork: a group put away still gives the menu-bar reveal
+                // its controls, in place.
+                if self.ivars().bare.get() {
+                    button.setHidden(false);
+                    CATransaction::begin();
+                    CATransaction::setDisableActions(true);
+                    slide(&button, 0.0, 0.0);
+                    CATransaction::commit();
+                }
             }
             fade(self, 0.0, 0.0);
         } else {
@@ -417,6 +518,49 @@ fn fade(view: &NSView, opacity: f32, duration: f64) {
     CATransaction::commit();
 }
 
+/// rice fork: whether a view's layer is mid-slide to `lift` already.
+fn heading(view: &NSView, lift: f64) -> bool {
+    view.layer().is_some_and(|layer| {
+        // SAFETY: a main-thread read of the layer's own animations.
+        (layer.transform().m42 - lift).abs() < f64::EPSILON
+            && unsafe { layer.animationForKey(group_slide()) }.is_some()
+    })
+}
+
+/// rice fork: moves a view's layer `lift` points up from its place by its
+/// transform, never its frame, continuing from wherever an unfinished slide
+/// has got to. Runs inside the caller's transaction, with actions disabled.
+fn slide(view: &NSView, lift: f64, duration: f64) {
+    let Some(layer) = view.layer() else {
+        return;
+    };
+    if duration > 0.0 && heading(view, lift) {
+        return;
+    }
+    // SAFETY: a main-thread read of the layer's in-flight rendering state.
+    let from = unsafe { layer.presentationLayer() }
+        .map_or(layer.transform().m42, |shown| shown.transform().m42);
+    // AppKit layers are not flipped: up is positive.
+    layer.setTransform(CATransform3D::new_translation(0.0, lift, 0.0));
+    layer.removeAnimationForKey(group_slide());
+    if duration > 0.0 && (from - lift).abs() > f64::EPSILON {
+        let animation =
+            CABasicAnimation::animationWithKeyPath(Some(ns_string!("transform.translation.y")));
+        // SAFETY: NSNumber is the value type Core Animation expects for a
+        // scalar key path.
+        unsafe {
+            animation.setFromValue(Some(&NSNumber::new_f64(from)));
+            animation.setToValue(Some(&NSNumber::new_f64(lift)));
+        }
+        animation.setDuration(duration);
+        // The interface's own --ease-out, as the notch slides with it.
+        animation.setTimingFunction(Some(&CAMediaTimingFunction::functionWithControlPoints(
+            0.22, 1.0, 0.36, 1.0,
+        )));
+        layer.addAnimation_forKey(&animation, Some(group_slide()));
+    }
+}
+
 /// Installs the resting controls on a browser window. Idempotent, and a no-op
 /// off the main thread or on a window without standard buttons.
 pub fn install(window: &WebviewWindow) {
@@ -490,8 +634,14 @@ pub fn set_tucked(window: &WebviewWindow, tucked: bool) {
     if controls.isHidden() == tucked {
         return;
     }
+    // rice fork: in hover mode the window-controls group shows and hides the
+    // buttons (`set_group_down`); a sidebar hidden from the group's own
+    // button must not take the lights from under the pointer.
+    let bare = controls.ivars().bare.get();
     for button in controls.buttons() {
-        button.setHidden(tucked);
+        if !bare {
+            button.setHidden(tucked);
+        }
     }
     controls.setHidden(tucked);
     if !tucked && !controls.ivars().suspended.get() {
@@ -517,33 +667,53 @@ pub fn set_tucked(window: &WebviewWindow, tucked: bool) {
     }
 }
 
-/// rice fork: whether the resting discs are drawn. Hovering still lights the
-/// real buttons, so the controls stay reachable and accessible.
+/// rice fork: whether the resting discs are drawn. Without them (hover mode)
+/// the window-controls group, not the pointer, shows and lights the real
+/// buttons (`set_group_down`), which stay reachable and accessible.
 pub fn set_bare(window: &WebviewWindow, bare: bool) {
-    if MainThreadMarker::new().is_none() {
-        return;
-    }
-    let Ok(pointer) = window.ns_window() else {
-        return;
-    };
-    // SAFETY: Tao's live NSWindow, borrowed for this main-thread call only.
-    let ns_window = unsafe { &*(pointer as *const NSWindow) };
-    let Some(close) = ns_window.standardWindowButton(NSWindowButton::CloseButton) else {
-        return;
-    };
-    // SAFETY: a main-thread read of the live close button's parent.
-    let Some(parent) = (unsafe { close.superview() }) else {
-        return;
-    };
-    let Some(controls) = parent
-        .subviews()
-        .iter()
-        .find_map(|view| view.downcast_ref::<WindowControls>().map(|c| c.retain()))
-    else {
+    let Some(controls) = controls_of(window) else {
         return;
     };
     controls.ivars().bare.set(bare);
     controls.setNeedsDisplay(true);
+}
+
+/// rice fork: whether the window's controls are in hover mode, where the
+/// window-controls group decides whether they show.
+pub fn is_bare(window: &WebviewWindow) -> bool {
+    controls_of(window).is_some_and(|controls| controls.ivars().bare.get())
+}
+
+/// rice fork: brings the controls down into the corner, or slides them up
+/// out of the window. The buttons move by their layers' transform, never
+/// their frames, so Tao's inset and AppKit's titlebar layout are untouched;
+/// put away they are hidden as well, so they take no clicks.
+pub fn set_group_down(window: &WebviewWindow, down: bool, animate: bool) {
+    let Some(controls) = controls_of(window) else {
+        return;
+    };
+    // The frame repeats nothing, but a request already met has nothing to
+    // move; an instant one always settles the buttons where it says.
+    if controls.ivars().group_down.replace(down) == down && animate {
+        return;
+    }
+    controls.place_group(animate);
+}
+
+/// rice fork: the controls view installed on a browser window, on the main
+/// thread only.
+fn controls_of(window: &WebviewWindow) -> Option<Retained<WindowControls>> {
+    MainThreadMarker::new()?;
+    let pointer = window.ns_window().ok()?;
+    // SAFETY: Tao's live NSWindow, borrowed for this main-thread call only.
+    let ns_window = unsafe { &*(pointer as *const NSWindow) };
+    let close = ns_window.standardWindowButton(NSWindowButton::CloseButton)?;
+    // SAFETY: a main-thread read of the live close button's parent.
+    let parent = unsafe { close.superview() }?;
+    parent
+        .subviews()
+        .iter()
+        .find_map(|view| view.downcast_ref::<WindowControls>().map(|c| c.retain()))
 }
 
 const TUCK_SECONDS: f64 = 0.22;
