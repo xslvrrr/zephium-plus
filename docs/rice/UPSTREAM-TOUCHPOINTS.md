@@ -18,7 +18,7 @@ Rebase conflicts appear only in these files.
 | `crates/zephium-app/src/shell/bootstrap.rs` | Seeds `metrics.spans` on each new Main window; the chrome-reload branch clears the chrome regions (`set_chrome_regions(win.id, Vec::new())`) |
 | `crates/zephium-app/src/shell/operations.rs` | `ui.toolbar` setting sets `chrome_spans`, updates all Main windows' `metrics.spans` and relayouts |
 | `frame/src/features/sidebar/components/SidebarHeader.svelte` | Nav buttons extracted to `NavControls.svelte` (an extraction: upstream edits to the nav buttons conflict here and must be ported by hand into `NavControls`); `navControls` prop hides only them; the sidebar menu's opening and its `extension.action=` handling moved to `lib/sidebar-menu.ts` |
-| `frame/src/features/sidebar/index.ts` | Exports `McpIndicator` and `NavControls` (the notch toolbar's back, forward, reload) |
+| `frame/src/features/sidebar/index.ts` | Exports `McpIndicator`; `NavControls`, `openSidebarMenu` and `runMenuExtension` for the notch toolbar (back, forward, reload; the "…" menu) |
 | `frame/src/features/sidebar/components/UtilityTray.svelte` | `data-chrome-region` on the tray body, so the panel takes the pointer over the page when it opens from the notch |
 | `frame/architecture.config.js` | Boundary policy: `features/notch` may import `features/sidebar` (its public API, for `NavControls`) |
 | `desktop/src/platform/window_controls.rs` | (Task 6) `bare` ivar skips resting discs; `set_bare` |

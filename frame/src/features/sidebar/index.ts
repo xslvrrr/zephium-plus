@@ -7,3 +7,4 @@ export { default as UtilityTray } from "./components/UtilityTray.svelte";
 export { default as SidebarNotice } from "./components/SidebarNotice.svelte";
 export { default as McpIndicator } from "./components/McpIndicator.svelte";
 export { default as NavControls } from "./components/NavControls.svelte";
+export { openSidebarMenu, runMenuExtension } from "./lib/sidebar-menu";

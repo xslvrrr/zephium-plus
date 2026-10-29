@@ -21,14 +21,16 @@ export type Figure = {
 };
 
 /** The notch for a page column at `x` of this width, in window points,
- *  centred over it and narrowed to fit it; null when the column has no room
- *  for its corners. Traced as `ground.ts` traces the new tab's: from the left
+ *  centred over it and narrowed to fit it, `depth` deep (the notch's own
+ *  height, or more while something hangs under the field); null when the
+ *  column has no room for its corners. Traced as `ground.ts` traces the new tab's: from the left
  *  foot on the top edge, the ground turning down into the side on the flare's
  *  radius, straight down, round the bottom corners, and back up the other
  *  side to the right foot. */
-export function notchFigure(x: number, width: number): Figure | null {
+export function notchFigure(x: number, width: number, depth: number = NOTCH.height): Figure | null {
   const span = Math.max(0, Math.min(NOTCH.width, width - 2 * INSET));
-  const { height, radius: r, flare: f } = NOTCH;
+  const { radius: r, flare: f } = NOTCH;
+  const height = n(Math.max(NOTCH.height, depth));
   if (span < 2 * r) return null;
   const left = f;
   const right = f + span;
