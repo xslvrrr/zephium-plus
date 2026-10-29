@@ -1,5 +1,9 @@
 //! rice fork: Zephium as an MCP server for local Claude clients.
 //! Protocol only; the browser is reached through `Backend`.
+//!
+//! macOS/Linux only: the transport is a Unix socket, so on other platforms
+//! the crate is empty (the desktop depends on it only under `cfg(unix)`).
+#![cfg(unix)]
 mod handler;
 mod socket;
 mod tools;
