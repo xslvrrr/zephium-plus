@@ -56,7 +56,9 @@
   onclose={closed}
 >
   {#snippet trigger()}<Icon icon={warning ? Alert02Icon : Settings05Icon} size={15} />{/snippet}
-  <div class="tray-body" data-tray-body tabindex="-1" bind:this={body}>
+  <!-- rice fork: in the notch the panel hangs over the page; the raised
+       chrome gives the pointer only to what is marked as its region. -->
+  <div class="tray-body" data-tray-body data-chrome-region tabindex="-1" bind:this={body}>
     {@render children(open)}
   </div>
 </Disclosure>

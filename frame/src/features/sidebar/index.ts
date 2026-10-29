@@ -6,3 +6,4 @@ export { default as PrivateReturn } from "./components/PrivateReturn.svelte";
 export { default as UtilityTray } from "./components/UtilityTray.svelte";
 export { default as SidebarNotice } from "./components/SidebarNotice.svelte";
 export { default as McpIndicator } from "./components/McpIndicator.svelte";
+export { default as NavControls } from "./components/NavControls.svelte";

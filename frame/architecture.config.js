@@ -76,6 +76,11 @@ export const architecture = {
             from: { element: { type: "features", captured: { module: "assist" } } },
             allow: { to: { element: { type: "features", captured: { module: "work" } } } },
           },
+          // rice fork: the notch toolbar holds the sidebar's navigation buttons.
+          {
+            from: { element: { type: "features", captured: { module: "notch" } } },
+            allow: { to: { element: { type: "features", captured: { module: "sidebar" } } } },
+          },
           {
             from: { element: { type: "features", captured: { module: "library" } } },
             allow: { to: { element: { type: "features", captured: { module: "downloads" } } } },
