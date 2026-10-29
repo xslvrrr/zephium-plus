@@ -38,3 +38,4 @@ Rebase conflicts appear only in these files.
 | `.github/workflows/ci.yml` | macOS Rust job builds the MCP bridge first (`scripts/rice-build-mcp-bridge.sh`): tauri-build's `externalBin` copy fails without it |
 | `.github/workflows/nightly.yml` | Same bridge step before the macOS coverage job's workspace build |
 | `README.md` | One rice-fork note under "Build from source": run `scripts/rice-build-mcp-bridge.sh` once on macOS before `cargo check`/`pnpm dev` |
+| `.cargo/config.toml` | macOS `rustflags` `-no_fixup_chains`: release builds with Xcode 27's ld otherwise write proc-macro dylibs dyld rejects |

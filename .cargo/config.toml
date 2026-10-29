@@ -12,8 +12,14 @@ rustflags = ["-C", "control-flow-guard=yes"]
 
 # Debug executables keep one signature across rebuilds, so the Keychain stops
 # asking for the login password after every build (see the script).
+# rice fork: ld-27037 (Xcode 27) writes proc-macro dylibs that dyld rejects
+# ("mis-aligned LINKEDIT string pool") when MACOSX_DEPLOYMENT_TARGET=14.0,
+# which tauri build sets from minimumSystemVersion. Without chained fixups
+# the dylibs load.
 [target.aarch64-apple-darwin]
 runner = "scripts/dev-sign-run.sh"
+rustflags = ["-C", "link-arg=-Wl,-no_fixup_chains"]
 
 [target.x86_64-apple-darwin]
 runner = "scripts/dev-sign-run.sh"
+rustflags = ["-C", "link-arg=-Wl,-no_fixup_chains"]
