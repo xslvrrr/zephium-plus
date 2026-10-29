@@ -10,3 +10,9 @@
   --radius-card: calc(var(--rice-radius) + 6px);
   --radius-panel: calc(var(--rice-radius) + 10px);
 }
+
+/* While the chrome is over the page it paints nothing there but the notch
+   and the controls; the body's ground would cover the page. */
+:root[data-chrome-raised] body {
+  background: transparent;
+}

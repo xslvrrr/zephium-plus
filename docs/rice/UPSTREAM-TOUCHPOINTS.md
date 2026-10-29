@@ -14,15 +14,15 @@ Rebase conflicts appear only in these files.
 | `frame/src/app/browser/Shell.svelte` | The address block is one `addressBlock` snippet (the sidebar renders it once, as upstream's inline block); renders `<McpIndicator />` before `<SidebarNotice />` |
 | `crates/zephium-core/src/layout.rs` | `Metrics.spans`: the chrome spans the window beneath the page in every shape (`sidebar()` chrome width); the page's rect is upstream's |
 | `crates/zephium-core/src/windows.rs` | `Windows::iter_mut` |
-| `crates/zephium-app/src/shell/mod.rs` | `chrome_spans` field, seeded from `ui.toolbar` |
+| `crates/zephium-app/src/shell/mod.rs` | `chrome_spans` field, seeded from `ui.toolbar`; `Command::ChromeRegions` arm: clamps the rects to the focused window (at most 8) and calls `set_chrome_regions` |
 | `crates/zephium-app/src/shell/bootstrap.rs` | Seeds `metrics.spans` on each new Main window |
 | `crates/zephium-app/src/shell/operations.rs` | `ui.toolbar` setting sets `chrome_spans`, updates all Main windows' `metrics.spans` and relayouts |
 | `frame/src/features/sidebar/components/SidebarHeader.svelte` | Nav buttons extracted to `NavControls.svelte` (an extraction: upstream edits to the nav buttons conflict here and must be ported by hand into `NavControls`); `navControls` prop hides only them; the sidebar menu's opening and its `extension.action=` handling moved to `lib/sidebar-menu.ts` |
 | `frame/src/features/sidebar/index.ts` | Exports `McpIndicator` |
 | `desktop/src/platform/window_controls.rs` | (Task 6) `bare` ivar skips resting discs; `set_bare` |
 | `desktop/src/platform/macos.rs` | (Task 6) applies `ui.window-controls` at install; `window_controls_set_bare` wrapper; `pub mod rice_backdrop;` and `rice_backdrop::install(window)` in `init` after the material |
-| `desktop/src/lib.rs` | `mod rice_theme;` and `rice_theme::start(data_dir, shell)` after `external_links::adopt`; seeds `ui.radius` (`set_page_radius`) after `APP_STORE.set`; `preference.ui.window-controls=` and `preference.ui.radius=` arms in the projection hook; a macOS arm for `preference.ui.texture=` / `preference.ui.texture-opacity=` (`rice_backdrop::follow`, then `refresh_all` on the main thread), and `refresh_all` queued after `apply_native_material` in the `preference.ui.material=` arm; MCP (unix + `work-product`): `mod mcp_server;`, `app_store()` beside `app_setting`, `mcp_server::set_enabled` after `page_assist::install` when `mcp.enabled` is on, a `preference.mcp.enabled=` arm in the projection hook, `mcp_server::shutdown()` on `RunEvent::Exit` |
-| `crates/zephium-engine/src/lib.rs` | (Task 7) `PAGE_RADIUS` static with `set_page_radius` / `page_radius` |
+| `desktop/src/lib.rs` | `mod rice_theme;` and `rice_theme::start(data_dir, shell)` after `external_links::adopt`; seeds `ui.radius` (`set_page_radius`) after `APP_STORE.set`; `preference.ui.window-controls=` and `preference.ui.radius=` arms in the projection hook; a macOS arm for `preference.ui.texture=` / `preference.ui.texture-opacity=` (`rice_backdrop::follow`, then `refresh_all` on the main thread), and `refresh_all` queued after `apply_native_material` in the `preference.ui.material=` arm; MCP (unix + `work-product`): `mod mcp_server;`, `app_store()` beside `app_setting`, `mcp_server::set_enabled` after `page_assist::install` when `mcp.enabled` is on, a `preference.mcp.enabled=` arm in the projection hook, `mcp_server::shutdown()` on `RunEvent::Exit`; `RegionRect` and the `chrome_regions` command (`CallerPolicy::Main`), registered in `specta_builder` after `sidebar_peek` |
+| `crates/zephium-engine/src/lib.rs` | (Task 7) `PAGE_RADIUS` static with `set_page_radius` / `page_radius`; `set_chrome_regions` on `WebviewEngine` (macOS dispatch, as `raise_chrome`) |
 | `crates/zephium-engine/src/host/construction.rs` | (Task 7) macOS page `configure` reads `crate::page_radius()` instead of `12.0` |
 | `frame/messages/en.json` | `rice_*` strings for Settings → Appearance → Toolbar and texture; `update_status_unavailable` says the build is a fork updated by rebuilding (other locales keep upstream's text); `mcp_*` strings for Settings → Connections → Claude and the sidebar indicator |
 | `frame/src/features/settings/components/sections/ConnectionsPage.svelte` | Renders `<ClaudeAccessGroup />` first, on macOS only (the MCP backend is unix-only) |
@@ -37,3 +37,11 @@ Rebase conflicts appear only in these files.
 | `.github/workflows/nightly.yml` | Same bridge step before the macOS coverage job's workspace build |
 | `README.md` | One rice-fork note under "Build from source": run `scripts/rice-build-mcp-bridge.sh` once on macOS before `cargo check`/`pnpm dev` |
 | `.cargo/config.toml` | macOS `rustflags` `-no_fixup_chains`: release builds with Xcode 27's ld otherwise write proc-macro dylibs dyld rejects |
+| `vendor/wry/src/wkwebview/class/wry_web_view.rs` | `input_rects` ivar; `hitTest:` passes through outside those rects (`takes_input_at`); `set_input_rects` |
+| `vendor/wry/src/wkwebview/mod.rs` | Initialises the `input_rects` ivar beside `skips_hit_test` |
+| `crates/zephium-core/src/ports/engine.rs` | `Engine::set_chrome_regions` (default `Unsupported`) after `raise_chrome` |
+| `crates/zephium-engine/src/host/stages.rs` | macOS `set_chrome_regions` forwarding to the window's stage |
+| `crates/zephium-engine/src/platform/macos/stage.rs` | `peek_raised` / `region_raised` ivars; `raise_chrome` and `set_chrome_regions` set one each and call `restack` (upstream's `raise_chrome` body, parking page tracking only for a whole-view raise); `chrome_view`; `retire` clears the chrome's input rects |
+| `crates/zephium-app/src/api.rs` | `Command::ChromeRegions(Vec<Rect>)` |
+| `crates/zephium-app/src/actor/mailbox.rs` | `CoalescedKey::ChromeRegions`: each region list replaces the last |
+| `frame/src/shared/ipc/bindings.ts` | Generated: `commands.chromeRegions` and `RegionRect` |

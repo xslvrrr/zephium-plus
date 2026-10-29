@@ -1834,6 +1834,7 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             sidebar_set_width,
             sidebar_set_hidden,
             sidebar_peek,
+            chrome_regions,
             sidebar_resize,
             sidebar_resize_guide,
             tab_drag_over,
@@ -5390,6 +5391,35 @@ fn sidebar_peek(
     #[cfg(not(target_os = "macos"))]
     let _ = lights;
     shell.dispatch(Command::PeekSidebar { peek, slide });
+}
+
+/// rice fork: one rect where the chrome takes the mouse while it is over the
+/// page, in window top-left logical points.
+#[derive(Clone, Copy, Debug, serde::Deserialize, specta::Type)]
+pub struct RegionRect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// rice fork: where the chrome takes the mouse while it is over the page.
+/// Non-empty raises the chrome over the page with input limited to these
+/// rects; empty puts it back beneath unless a hidden sidebar's peek holds it.
+#[tauri::command]
+#[specta::specta]
+fn chrome_regions(caller: WebviewWindow, shell: State<'_, Handle>, rects: Vec<RegionRect>) {
+    if !authorize(&caller, CallerPolicy::Main, "chrome_regions") {
+        return;
+    }
+    let regions = rects
+        .into_iter()
+        .filter(|r| [r.x, r.y, r.width, r.height].iter().all(|v| v.is_finite()))
+        .filter(|r| r.width > 0.0 && r.height > 0.0)
+        .take(8)
+        .map(|r| Rect::new(r.x, r.y, r.width, r.height))
+        .collect();
+    shell.dispatch(Command::ChromeRegions(regions));
 }
 
 #[tauri::command]

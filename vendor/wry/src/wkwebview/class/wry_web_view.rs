@@ -9,9 +9,9 @@ use objc2::runtime::ProtocolObject;
 use objc2::{define_class, rc::Retained, runtime::Bool, DeclaredClass, Message};
 #[cfg(target_os = "macos")]
 use objc2_app_kit::{NSDraggingDestination, NSEvent, NSMenu, NSTrackingArea, NSView};
-#[cfg(target_os = "macos")]
-use objc2_foundation::NSPoint;
 use objc2_foundation::{NSObjectProtocol, NSUUID};
+#[cfg(target_os = "macos")]
+use objc2_foundation::{NSPoint, NSPointInRect, NSRect};
 
 #[cfg(not(target_os = "macos"))]
 use crate::native_admission::InFlightAdmission;
@@ -50,6 +50,11 @@ pub struct WryWebViewIvars {
   /// The view is also skipped by hit-testing.
   #[cfg(target_os = "macos")]
   pub(crate) skips_hit_test: std::cell::Cell<bool>,
+  /// rice fork: while `Some`, the view takes the mouse only inside these
+  /// rects (its own, flipped coordinates); elsewhere hit-testing passes
+  /// through to the views beneath it.
+  #[cfg(target_os = "macos")]
+  pub(crate) input_rects: std::cell::RefCell<Option<Vec<NSRect>>>,
   pub(crate) custom_protocol_task_ids: Mutex<HashMap<usize, Retained<NSUUID>>>,
   /// One in-flight scope per registered scheme, by protocol index: a slow IPC
   /// call never holds back the app's own assets, nor they it.
@@ -100,7 +105,7 @@ define_class!(
     #[cfg(target_os = "macos")]
     #[unsafe(method_id(hitTest:))]
     fn hit_test(&self, point: NSPoint) -> Option<Retained<NSView>> {
-      if self.ivars().skips_hit_test.get() {
+      if self.ivars().skips_hit_test.get() || !self.takes_input_at(point) {
         None
       } else {
         unsafe { objc2::msg_send![super(self), hitTest: point] }
@@ -237,6 +242,28 @@ impl WryWebView {
 
   pub fn is_pointer_inert(&self) -> bool {
     self.ivars().skips_hit_test.get()
+  }
+
+  /// rice fork: whether `point` (in the superview's coordinates) falls
+  /// inside the input rects, or anywhere while there are none.
+  fn takes_input_at(&self, point: NSPoint) -> bool {
+    let rects = self.ivars().input_rects.borrow();
+    let Some(rects) = rects.as_ref() else {
+      return true;
+    };
+    // The conversion goes to the superclass so the cursor guard does not
+    // note it as WebKit's own read.
+    // SAFETY: the view is used on the main thread, where AppKit calls hitTest:.
+    let superview = unsafe { self.superview() };
+    let local: NSPoint =
+      unsafe { objc2::msg_send![super(self), convertPoint: point, fromView: superview.as_deref()] };
+    rects.iter().any(|rect| NSPointInRect(local, *rect))
+  }
+
+  /// rice fork: limits mouse input to `rects` (the view's own coordinates),
+  /// or gives it the whole view again with `None`.
+  pub fn set_input_rects(&self, rects: Option<Vec<NSRect>>) {
+    *self.ivars().input_rects.borrow_mut() = rects;
   }
 
   /// Holds the tracking areas out of the view while it keeps taking clicks

@@ -985,6 +985,25 @@ impl Shell {
                     }
                 }
             }
+            Command::ChromeRegions(regions) => {
+                if let Some(win) = self.windows.focused() {
+                    // rice fork: clamped to the window; the IPC edge already
+                    // dropped non-finite and empty rects.
+                    let (width, height) = (win.size.width, win.size.height);
+                    let regions = regions
+                        .into_iter()
+                        .filter_map(|r| {
+                            let (x, y) = (r.x.max(0.0), r.y.max(0.0));
+                            let right = (r.x + r.width).min(width);
+                            let bottom = (r.y + r.height).min(height);
+                            (right > x && bottom > y)
+                                .then(|| Rect::new(x, y, right - x, bottom - y))
+                        })
+                        .take(8)
+                        .collect();
+                    let _ = self.engine.set_chrome_regions(win.id, regions);
+                }
+            }
             Command::SetPagePermissionCardHost(available) => {
                 self.set_page_permission_card_host(available)
             }

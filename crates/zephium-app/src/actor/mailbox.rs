@@ -68,6 +68,8 @@ enum CoalescedKey {
     SidebarWidth,
     SidebarHidden,
     SidebarPeek,
+    /// rice fork: each list replaces the last.
+    ChromeRegions,
     SidebarGuide,
     SidebarGuideEnd,
     WorkPaneRect,
@@ -1293,6 +1295,7 @@ fn command_coalesced_key(command: &Command) -> Option<CoalescedKey> {
         Command::SetSidebarWidth(..) => Some(CoalescedKey::SidebarWidth),
         Command::SetSidebarHidden(_) => Some(CoalescedKey::SidebarHidden),
         Command::PeekSidebar { .. } => Some(CoalescedKey::SidebarPeek),
+        Command::ChromeRegions(_) => Some(CoalescedKey::ChromeRegions),
         Command::SidebarResizeGuide(Some(_)) => Some(CoalescedKey::SidebarGuide),
         Command::SidebarResizeGuide(None) => Some(CoalescedKey::SidebarGuideEnd),
         Command::WorkPaneSetRect { .. } => Some(CoalescedKey::WorkPaneRect),

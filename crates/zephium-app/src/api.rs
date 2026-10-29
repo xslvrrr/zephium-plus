@@ -492,6 +492,10 @@ pub enum Command {
         peek: bool,
         slide: bool,
     },
+    /// rice fork: where the chrome takes the mouse while it is over the
+    /// page, in window top-left points; empty puts it back beneath unless a
+    /// peek holds it.
+    ChromeRegions(Vec<Rect>),
     /// Transient Windows resize feedback only; no width or layout mutation.
     SidebarResizeGuide(Option<f64>),
     /// Whether the expanded sidebar is on screen to show a page-permission

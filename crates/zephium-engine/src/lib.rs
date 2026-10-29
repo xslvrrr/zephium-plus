@@ -3137,6 +3137,30 @@ impl Engine for WebviewEngine {
         }
     }
 
+    fn set_chrome_regions(&self, window: WindowId, regions: Vec<Rect>) -> NativeDispatch {
+        #[cfg(target_os = "macos")]
+        {
+            let queued_retirement = self.retirement.clone();
+            let queued_delivery = self.event_delivery.clone();
+            let queued_fatal = self.fatal_security_failure.clone();
+            NativeDispatch::from_scheduled(self.run(move || {
+                if !host::try_with(move |host| host.set_chrome_regions(window, regions)) {
+                    fail_native_host_admission(
+                        &queued_delivery,
+                        &queued_retirement,
+                        &queued_fatal,
+                        "chrome regions were not admitted by the engine host",
+                    );
+                }
+            }))
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = (window, regions);
+            NativeDispatch::Unsupported
+        }
+    }
+
     fn zoom(&self, id: ItemId, scale: f64, request: ZoomRequestId) -> NativeDispatch {
         if !valid_page_zoom(scale) {
             return NativeDispatch::Rejected;

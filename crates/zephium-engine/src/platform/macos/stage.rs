@@ -197,6 +197,11 @@ pub struct StageIvars {
     pointer_cover: RefCell<Option<PointerCover>>,
     /// The pages, parked while a hidden sidebar's chrome is over them.
     under_chrome: RefCell<Option<Parked>>,
+    /// rice fork: the chrome is over this stage while either holds it: a
+    /// hidden sidebar's peek (the whole view), or input regions (the notch,
+    /// the window-controls group) that limit it to rects.
+    peek_raised: Cell<bool>,
+    region_raised: Cell<bool>,
     covers: RefCell<HashMap<ItemId, PaintCover>>,
     indicator: RefCell<Option<Retained<NSView>>>,
     /// A drop target the pointer has reached but not yet rested on.
@@ -877,10 +882,49 @@ impl ContentStage {
     }
 
     /// Stacks the chrome over this stage while a hidden sidebar is shown, or
-    /// back beneath it. The views are reordered where they are, never taken
-    /// out of the window, so no page sees itself leave it; and the pages stop
-    /// setting the cursor while the chrome is over them.
+    /// back beneath it. rice fork: input regions hold it up too
+    /// ([`Self::set_chrome_regions`]); it goes back beneath only once neither
+    /// does.
     pub fn raise_chrome(&self, raised: bool) {
+        self.ivars().peek_raised.set(raised);
+        self.restack(raised || self.ivars().region_raised.get());
+    }
+
+    /// rice fork: the notch and the window-controls group come over the page
+    /// inside these rects only; the page keeps the rest of the window.
+    /// `regions` are in window top-left points, which are the chrome view's
+    /// own: it stands at the window's origin and is flipped.
+    pub fn set_chrome_regions(&self, regions: &[Rect]) {
+        let raised = !regions.is_empty();
+        self.ivars().region_raised.set(raised);
+        if let Some(chrome) = self.chrome_view() {
+            chrome.set_input_rects(raised.then(|| {
+                regions
+                    .iter()
+                    .map(|r| NSRect::new(NSPoint::new(r.x, r.y), NSSize::new(r.width, r.height)))
+                    .collect()
+            }));
+        }
+        self.restack(raised || self.ivars().peek_raised.get());
+    }
+
+    /// rice fork: the chrome web view, the stage's sibling in the window.
+    fn chrome_view(&self) -> Option<Retained<wry::WryWebView>> {
+        // SAFETY: retained parent access on the AppKit main thread.
+        let parent = unsafe { self.superview() }?;
+        parent.subviews().iter().find_map(|view| {
+            view.downcast_ref::<wry::WryWebView>()
+                .map(|chrome| chrome.retain())
+        })
+    }
+
+    /// Stacks the chrome over this stage, or back beneath it. The views are
+    /// reordered where they are, never taken out of the window, so no page
+    /// sees itself leave it; and while the whole chrome is over them the
+    /// pages stop setting the cursor. rice fork: with input regions the
+    /// chrome takes only its rects, so the pages keep their own cursor (the
+    /// cursor guard hit-tests, and the chrome is not hit outside them).
+    fn restack(&self, raised: bool) {
         // SAFETY: retained parent access on the AppKit main thread.
         let Some(parent) = (unsafe { self.superview() }) else {
             return;
@@ -926,7 +970,7 @@ impl ContentStage {
                 );
             }
         }
-        let parked = raised.then(|| {
+        let parked = (raised && !self.ivars().region_raised.get()).then(|| {
             let views = self.ivars().views.borrow();
             Parked::hold(views.values().filter_map(|host| {
                 host.view
@@ -947,6 +991,13 @@ impl ContentStage {
     }
 
     pub fn retire(&self) {
+        // rice fork: a stage that limited the chrome's input gives it back
+        // the whole view, so a successor finds it as it would a fresh one.
+        if self.ivars().region_raised.replace(false) {
+            if let Some(chrome) = self.chrome_view() {
+                chrome.set_input_rects(None);
+            }
+        }
         self.ivars().pointer_cover.take();
         self.ivars().stage_retry_terminal.set(true);
         self.cancel_split_drag(false);

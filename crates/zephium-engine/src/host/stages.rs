@@ -373,6 +373,14 @@ impl EngineHost {
         }
     }
 
+    /// rice fork: the chrome's input regions over this window's stage.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn set_chrome_regions(&mut self, window: WindowId, regions: Vec<Rect>) {
+        if let Some(stage) = self.stages.get(&window) {
+            stage.set_chrome_regions(&regions);
+        }
+    }
+
     #[cfg(not(target_os = "macos"))]
     fn apply_content(
         &mut self,

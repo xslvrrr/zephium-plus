@@ -537,6 +537,12 @@ export const commands = {
 	 *  cuts the chrome to the card follow it in and out.
 	 */
 	sidebarPeek: (peek: boolean, lights: boolean, slide: boolean) => __TAURI_INVOKE<void>("sidebar_peek", { peek, lights, slide }),
+	/**
+	 *  rice fork: where the chrome takes the mouse while it is over the page.
+	 *  Non-empty raises the chrome over the page with input limited to these
+	 *  rects; empty puts it back beneath unless a hidden sidebar's peek holds it.
+	 */
+	chromeRegions: (rects: RegionRect[]) => __TAURI_INVOKE<void>("chrome_regions", { rects }),
 	sidebarResize: (width: number | null, enabled: boolean, revision: number | null) => __TAURI_INVOKE<boolean>("sidebar_resize", { width, enabled, revision }),
 	sidebarResizeGuide: (width: number | null) => __TAURI_INVOKE<boolean>("sidebar_resize_guide", { width }),
 	tabDragOver: (x: number | null, y: number | null) => __TAURI_INVOKE<void>("tab_drag_over", { x, y }),
@@ -2651,6 +2657,17 @@ export type ProfilesView = {
 	 */
 	private_tabs?: number | null,
 	profiles: ProfileEntryView[],
+};
+
+/**
+ *  rice fork: one rect where the chrome takes the mouse while it is over the
+ *  page, in window top-left logical points.
+ */
+export type RegionRect = {
+	x: number | null,
+	y: number | null,
+	width: number | null,
+	height: number | null,
 };
 
 /**  Why a recorded shortcut was not taken. */

@@ -821,6 +821,12 @@ pub trait Engine {
     ) -> NativeDispatch {
         NativeDispatch::Unsupported
     }
+    /// rice fork: raises the chrome over the stage while `regions` is
+    /// non-empty and limits its input to them; empty lowers it again unless
+    /// a hidden sidebar's peek still holds it.
+    fn set_chrome_regions(&self, _window: WindowId, _regions: Vec<Rect>) -> NativeDispatch {
+        NativeDispatch::Unsupported
+    }
     /// Asks the next content layout applied to `window` to move rather than
     /// jump, because it follows a deliberate change of the window's shape
     /// and not a resize. Consumed by that layout whether or not it moved
