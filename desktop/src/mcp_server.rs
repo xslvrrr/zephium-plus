@@ -28,6 +28,15 @@ use crate::page_assist::{mcp_active, mcp_outside_input, mcp_ports, mcp_reader, m
 const MAX_AUDIT_BYTES: u64 = 1024 * 1024;
 /// The longest page text a prompt shows, in characters.
 const MAX_PROMPT_TEXT: usize = 160;
+/// The longest fill value a prompt shows, in characters.
+const MAX_PROMPT_VALUE: usize = 200;
+/// The longest action a confirm shows: a page label and a fill value fit.
+const MAX_PROMPT_ACTION: usize = 400;
+/// `read_page`'s bound (spec §2.4): passages, and bytes of text plus links.
+const MAX_READ_PASSAGES: usize = 256;
+const MAX_READ_BYTES: usize = 48 * 1024;
+/// Consent prompts open at once, across all connections.
+const MAX_OPEN_PROMPTS: usize = 3;
 
 const ALLOW: &str = "Allow";
 const DENY: &str = "Deny";
@@ -41,6 +50,34 @@ static WANT: OnceLock<watch::Sender<bool>> = OnceLock::new();
 static GENERATION: AtomicU64 = AtomicU64::new(0);
 /// One audit writer at a time, so rotation and appends do not interleave.
 static AUDIT: Mutex<()> = Mutex::new(());
+/// The connections with a consent prompt on screen, one entry per prompt.
+static PROMPTS: Mutex<Vec<u64>> = Mutex::new(Vec::new());
+
+/// A consent prompt's place in `PROMPTS`, held until the person answers it,
+/// not until the asking call ends: a prompt outlives a call that timed out,
+/// and it still counts.
+struct PromptSlot(u64);
+
+impl PromptSlot {
+    /// One prompt per connection and `MAX_OPEN_PROMPTS` overall, or `Busy`.
+    fn take(connection: u64) -> Result<Self, Refusal> {
+        let mut open = PROMPTS.lock().unwrap_or_else(|p| p.into_inner());
+        if open.contains(&connection) || open.len() >= MAX_OPEN_PROMPTS {
+            return Err(Refusal::Busy);
+        }
+        open.push(connection);
+        Ok(Self(connection))
+    }
+}
+
+impl Drop for PromptSlot {
+    fn drop(&mut self) {
+        let mut open = PROMPTS.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(at) = open.iter().position(|&connection| connection == self.0) {
+            open.swap_remove(at);
+        }
+    }
+}
 
 struct DesktopBackend {
     app: AppHandle,
@@ -92,17 +129,62 @@ fn role_name(role: Role) -> String {
     }
 }
 
-/// Untrusted text for a native prompt: one line, bounded.
-fn prompt_text(text: &str) -> String {
+/// Untrusted text for a native prompt: one line, at most `max` characters.
+fn prompt_text(text: &str, max: usize) -> String {
     let mut line: String = text
         .chars()
         .map(|c| if c.is_control() { ' ' } else { c })
-        .take(MAX_PROMPT_TEXT + 1)
+        .take(max + 1)
         .collect();
-    if line.chars().count() > MAX_PROMPT_TEXT {
-        line = line.chars().take(MAX_PROMPT_TEXT).collect::<String>() + "…";
+    if line.chars().count() > max {
+        line = line.chars().take(max).collect::<String>() + "…";
     }
     line
+}
+
+/// A fill's confirm names the value: `Type “value” into “Search”`. The
+/// planner's label is `Type into "Search"`.
+fn fill_label(label: &str, value: &str) -> String {
+    let value = prompt_text(value, MAX_PROMPT_VALUE);
+    let target = label.strip_prefix("Type into ").map(|target| {
+        target
+            .strip_prefix('"')
+            .and_then(|target| target.strip_suffix('"'))
+            .unwrap_or(target)
+    });
+    match target {
+        Some(target) => format!(
+            "Type “{value}” into “{}”",
+            prompt_text(target, MAX_PROMPT_TEXT)
+        ),
+        None => format!("{}: “{value}”", prompt_text(label, MAX_PROMPT_TEXT)),
+    }
+}
+
+/// The passages in reading order while they fit `read_page`'s bound; the
+/// one that crosses the byte bound keeps the text that fits. True when any
+/// was cut.
+fn bounded(passages: Vec<Passage>) -> (Vec<Passage>, bool) {
+    let mut kept = Vec::with_capacity(passages.len().min(MAX_READ_PASSAGES));
+    let mut used = 0;
+    for mut passage in passages {
+        if kept.len() == MAX_READ_PASSAGES {
+            return (kept, true);
+        }
+        let link = passage.href.as_ref().map_or(0, String::len);
+        let room = MAX_READ_BYTES - used;
+        if link + passage.text.len() > room {
+            if let Some(text_room) = room.checked_sub(link).filter(|&bytes| bytes > 0) {
+                let cut = passage.text.floor_char_boundary(text_room);
+                passage.text.truncate(cut);
+                kept.push(passage);
+            }
+            return (kept, true);
+        }
+        used += link + passage.text.len();
+        kept.push(passage);
+    }
+    (kept, false)
 }
 
 /// A client-supplied name for one audit field: bounded, no control characters.
@@ -164,13 +246,23 @@ impl DesktopBackend {
     /// client's cancel, a stop) this future is dropped, the answer has
     /// nowhere to go, and nothing acts on it. The dialog cannot be closed
     /// from here, so a late approval says so instead of seeming to work.
+    ///
+    /// Deny comes first in `buttons`: rfd makes the first button the
+    /// default (Return) one on macOS, both for `NSAlert` and for the
+    /// parentless `CFUserNotification` alert, so Return denies.
+    ///
+    /// `Busy` when this connection already has a prompt on screen or
+    /// `MAX_OPEN_PROMPTS` are open; the slot is freed when the person
+    /// answers, so a prompt left open by an ended call still counts.
     async fn ask(
         &self,
+        connection: u64,
         title: &str,
         body: String,
         buttons: MessageDialogButtons,
         client: &str,
-    ) -> Option<MessageDialogResult> {
+    ) -> Result<Option<MessageDialogResult>, Refusal> {
+        let slot = PromptSlot::take(connection)?;
         let (sender, receiver) = tokio::sync::oneshot::channel();
         let app = self.app.clone();
         let client = client.to_owned();
@@ -181,6 +273,7 @@ impl DesktopBackend {
             .kind(MessageDialogKind::Warning)
             .buttons(buttons)
             .show_with_result(move |result| {
+                drop(slot);
                 // `send` fails exactly when the asking call has ended.
                 let Err(late) = sender.send(result) else {
                     return;
@@ -196,7 +289,7 @@ impl DesktopBackend {
                         .show(|_| {});
                 }
             });
-        receiver.await.ok()
+        Ok(receiver.await.ok())
     }
 
     /// Adds `client` to the always-allowed list, when it still fits.
@@ -238,10 +331,8 @@ impl Backend for DesktopBackend {
             let epoch = self.readable(tab)?;
             let (page, _) = mcp_ports().ok_or(Refusal::Failed)?;
             let readout = page.read(tab, epoch).await.map_err(read_failure)?;
-            Ok(PageRead {
-                read: readout.read,
-                title: readout.title.map(|title| fence(&title)),
-                passages: readout
+            let (passages, truncated) = bounded(
+                readout
                     .passages
                     .into_iter()
                     .map(|passage| Passage {
@@ -251,6 +342,12 @@ impl Backend for DesktopBackend {
                         href: passage.href,
                     })
                     .collect(),
+            );
+            Ok(PageRead {
+                read: readout.read,
+                title: readout.title.map(|title| fence(&title)),
+                passages,
+                truncated,
             })
         })
     }
@@ -331,10 +428,14 @@ impl Backend for DesktopBackend {
     fn resolve_step(&self, step: &StepIn) -> Result<String, Refusal> {
         let epoch = self.readable(&step.tab)?;
         let (page, _) = mcp_ports().ok_or(Refusal::Failed)?;
+        let request = Self::step_request(step)?;
         let resolved = page
-            .resolve(&step.tab, epoch, &Self::step_request(step)?)
+            .resolve(&step.tab, epoch, &request)
             .map_err(step_failure)?;
-        Ok(resolved.label)
+        Ok(match (request.verb, step.value.as_deref()) {
+            (Verb::Fill, Some(value)) => fill_label(&resolved.label, value),
+            _ => resolved.label,
+        })
     }
 
     fn run_step<'a>(&'a self, step: &'a StepIn) -> BoxFuture<'a, Result<(), Refusal>> {
@@ -350,43 +451,58 @@ impl Backend for DesktopBackend {
         })
     }
 
-    fn confirm<'a>(&'a self, client: &'a str, action: String) -> BoxFuture<'a, bool> {
+    fn confirm<'a>(
+        &'a self,
+        connection: u64,
+        client: &'a str,
+        action: String,
+    ) -> BoxFuture<'a, Result<bool, Refusal>> {
         Box::pin(async move {
             let answer = self
                 .ask(
+                    connection,
                     "Zephium",
-                    format!("{client} wants to {}.", prompt_text(&action)),
-                    MessageDialogButtons::OkCancelCustom(ALLOW.into(), DENY.into()),
+                    format!(
+                        "{client} wants to {}.",
+                        prompt_text(&action, MAX_PROMPT_ACTION)
+                    ),
+                    // Deny first: it is the default (Return) button.
+                    MessageDialogButtons::OkCancelCustom(DENY.into(), ALLOW.into()),
                     client,
                 )
-                .await;
-            matches!(answer, Some(MessageDialogResult::Custom(label)) if label == ALLOW)
+                .await?;
+            Ok(matches!(answer, Some(MessageDialogResult::Custom(label)) if label == ALLOW))
         })
     }
 
-    fn admit<'a>(&'a self, client: &'a str) -> BoxFuture<'a, bool> {
+    fn admit<'a>(
+        &'a self,
+        connection: u64,
+        client: &'a str,
+    ) -> BoxFuture<'a, Result<bool, Refusal>> {
         Box::pin(async move {
             let allowed = crate::app_setting("mcp.allowed").unwrap_or_default();
             if zephium_core::preferences::mcp_allowed(&allowed).contains(&client) {
-                return true;
+                return Ok(true);
             }
             let answer = self
                 .ask(
+                    connection,
                     &format!("Allow {client} to use Zephium?"),
                     format!(
                         "{client} wants to see your tabs, read pages and open sites in Zephium. \
                          Closing tabs and page steps will still ask you each time."
                     ),
-                    // The default (first) button is the one that grants least.
+                    // Deny first: it is the default (Return) button.
                     MessageDialogButtons::YesNoCancelCustom(
+                        DENY.into(),
                         ALLOW_ONCE.into(),
                         ALLOW_ALWAYS.into(),
-                        DENY.into(),
                     ),
                     client,
                 )
-                .await;
-            match answer {
+                .await?;
+            Ok(match answer {
                 Some(MessageDialogResult::Custom(label)) if label == ALLOW_ALWAYS => {
                     // Read again: another prompt may have added a name meanwhile.
                     let allowed = crate::app_setting("mcp.allowed").unwrap_or_default();
@@ -395,7 +511,7 @@ impl Backend for DesktopBackend {
                 }
                 Some(MessageDialogResult::Custom(label)) => label == ALLOW_ONCE,
                 _ => false,
-            }
+            })
         })
     }
 

@@ -1,5 +1,6 @@
 //! The MCP handler. There is one per connection, so the client's name and its
 //! admission are settled once per connection.
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use rmcp::model::*;
@@ -10,8 +11,12 @@ use tokio::sync::OnceCell;
 
 use crate::{tools, Backend, Refusal, ADMIT_DEADLINE, CALL_DEADLINE};
 
+/// Numbers connections for the backend's prompt limits, unique per process.
+static NEXT_CONNECTION: AtomicU64 = AtomicU64::new(1);
+
 pub(crate) struct Handler {
     backend: Arc<dyn Backend>,
+    connection: u64,
     client: OnceLock<String>,
     admitted: OnceCell<bool>,
 }
@@ -20,8 +25,18 @@ impl Handler {
     pub(crate) fn new(backend: Arc<dyn Backend>) -> Self {
         Self {
             backend,
+            connection: NEXT_CONNECTION.fetch_add(1, Ordering::Relaxed),
             client: OnceLock::new(),
             admitted: OnceCell::new(),
+        }
+    }
+
+    /// Asks the person through the backend; any answer but Allow refuses.
+    async fn confirm(&self, client: &str, action: String) -> Result<(), Refusal> {
+        match self.backend.confirm(self.connection, client, action).await {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(Refusal::Denied),
+            Err(refusal) => Err(refusal),
         }
     }
 }
@@ -105,11 +120,15 @@ impl ServerHandler for Handler {
         let tab = args.get("tab").and_then(Value::as_str).map(str::to_owned);
         let backend = self.backend.clone();
         // An explicit Allow or Deny is kept for the connection; a prompt that
-        // times out is not, so the next call asks again.
+        // times out (`None`) or was not shown (`Busy`) is not, so the next
+        // call asks again.
+        let connection = self.connection;
         let admission = self.admitted.get_or_try_init(|| async {
-            tokio::time::timeout(ADMIT_DEADLINE, backend.admit(&client))
-                .await
-                .map_err(|_| ())
+            match tokio::time::timeout(ADMIT_DEADLINE, backend.admit(connection, &client)).await {
+                Ok(Ok(allowed)) => Ok(allowed),
+                Ok(Err(refusal)) => Err(Some(refusal)),
+                Err(_) => Err(None),
+            }
         });
         // rmcp only signals `ct` on a client cancel or a stop; it never aborts
         // the request, so every wait races it and drops the future on cancel.
@@ -127,10 +146,15 @@ impl ServerHandler for Handler {
                     .audit(&client, &name, tab.as_deref(), "refused");
                 return Ok(refused(Refusal::Denied).into());
             }
-            Err(()) => {
+            Err(None) => {
                 self.backend
                     .audit(&client, &name, tab.as_deref(), "timeout");
                 return Ok(refused(Refusal::Denied).into());
+            }
+            Err(Some(refusal)) => {
+                self.backend
+                    .audit(&client, &name, tab.as_deref(), "refused");
+                return Ok(refused(refusal).into());
             }
         }
         let run = tokio::time::timeout(CALL_DEADLINE, self.run(&client, &name, &args));
@@ -190,9 +214,10 @@ impl Handler {
                                 })
                             })
                             .collect();
-                        json_result(
-                            json!({ "read": page.read, "title": page.title, "passages": passages }),
-                        )
+                        json_result(json!({
+                            "read": page.read, "title": page.title, "passages": passages,
+                            "truncated": page.truncated,
+                        }))
                     }
                 },
             },
@@ -249,13 +274,15 @@ impl Handler {
                     let Some(title) = title else {
                         return Ok(refused(Refusal::NotFound));
                     };
-                    if !b.confirm(client, format!("close the tab “{title}”")).await {
-                        refused(Refusal::Denied)
-                    } else {
-                        match b.close(tab) {
+                    match self
+                        .confirm(client, format!("close the tab “{title}”"))
+                        .await
+                    {
+                        Err(r) => refused(r),
+                        Ok(()) => match b.close(tab) {
                             Ok(()) => json_result(json!({ "ok": true })),
                             Err(r) => refused(r),
-                        }
+                        },
                     }
                 }
             },
@@ -263,18 +290,15 @@ impl Handler {
                 Err(r) => refused(r),
                 Ok(step) => match b.resolve_step(&step) {
                     Err(r) => refused(r),
-                    Ok(label) => {
-                        if !b.confirm(client, label).await {
-                            refused(Refusal::Denied)
-                        } else {
-                            match b.run_step(&step).await {
-                                Ok(()) => json_result(
-                                    json!({ "ok": true, "hint": "Read the page again to see the result." }),
-                                ),
-                                Err(r) => refused(r),
-                            }
-                        }
-                    }
+                    Ok(label) => match self.confirm(client, label).await {
+                        Err(r) => refused(r),
+                        Ok(()) => match b.run_step(&step).await {
+                            Ok(()) => json_result(
+                                json!({ "ok": true, "hint": "Read the page again to see the result." }),
+                            ),
+                            Err(r) => refused(r),
+                        },
+                    },
                 },
             },
             _ => return Err(ErrorData::invalid_params("unknown tool", None)),

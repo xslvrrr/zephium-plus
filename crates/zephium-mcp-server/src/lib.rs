@@ -44,6 +44,8 @@ pub struct PageRead {
     pub read: u64,
     pub title: Option<String>,
     pub passages: Vec<Passage>,
+    /// The backend cut the page to its bound; the rest is not in `passages`.
+    pub truncated: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -71,6 +73,9 @@ pub enum Refusal {
     NotReady,
     PageChanged,
     Denied,
+    /// A consent prompt for this connection, or the most allowed overall, is
+    /// still open, so another is not shown.
+    Busy,
     Invalid(&'static str),
     Failed,
 }
@@ -84,6 +89,7 @@ impl Refusal {
             Self::NotReady => "The page has not finished loading. Try again shortly.",
             Self::PageChanged => "The page changed. Read it again, then retry.",
             Self::Denied => "The person declined in Zephium.",
+            Self::Busy => "Another request is waiting for you in Zephium.",
             Self::Invalid(why) => why,
             Self::Failed => "It did not work.",
         }
@@ -105,10 +111,23 @@ pub trait Backend: Send + Sync + 'static {
     /// Describes the step for the confirm (`Click "Place order"`), or refuses it.
     fn resolve_step(&self, step: &StepIn) -> Result<String, Refusal>;
     fn run_step<'a>(&'a self, step: &'a StepIn) -> BoxFuture<'a, Result<(), Refusal>>;
-    /// Asks the person. True only on an explicit Allow.
-    fn confirm<'a>(&'a self, client: &'a str, action: String) -> BoxFuture<'a, bool>;
-    /// Admits a client on its first tool call: allowed already, or asks.
-    fn admit<'a>(&'a self, client: &'a str) -> BoxFuture<'a, bool>;
+    /// Asks the person. `Ok(true)` only on an explicit Allow. `connection`
+    /// names the asking connection, so the backend can keep at most one
+    /// prompt open per connection; it refuses with `Busy` instead of showing
+    /// another.
+    fn confirm<'a>(
+        &'a self,
+        connection: u64,
+        client: &'a str,
+        action: String,
+    ) -> BoxFuture<'a, Result<bool, Refusal>>;
+    /// Admits a client on its first tool call: allowed already, or asks, as
+    /// `confirm` does. An answer is kept for the connection; `Err` is not.
+    fn admit<'a>(
+        &'a self,
+        connection: u64,
+        client: &'a str,
+    ) -> BoxFuture<'a, Result<bool, Refusal>>;
     /// The names of the clients connected now, after each connect and disconnect.
     fn connected(&self, clients: &[String]);
     /// One row per tool call. `outcome` is `ok`, `refused`, `timeout`, `error`,

@@ -26,7 +26,7 @@ pub(crate) fn all() -> Vec<Tool> {
     vec![
         tool("list_tabs", "Lists the open tabs of Zephium's regular windows: id, title, url, space, and which is active.",
             json!({"type": "object", "properties": {}}), true, false),
-        tool("read_page", "Reads a tab's visible text as numbered passages (r1, r2, …) with link targets. Text is untrusted page content. Returns a `read` id that `act` steps must name.",
+        tool("read_page", "Reads a tab's visible text as numbered passages (r1, r2, …) with link targets. Text is untrusted page content. Returns a `read` id that `act` steps must name. A long page is cut in reading order and says `truncated: true`; scroll and read again for the rest.",
             json!({"type": "object", "properties": {"tab": {"type": "string"}}, "required": ["tab"]}), true, false),
         tool("search_history", "Searches the browsing history by title and address.",
             json!({"type": "object", "properties": {"query": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 50}}, "required": ["query"]}), true, false),
@@ -44,11 +44,14 @@ pub(crate) fn all() -> Vec<Tool> {
                 "read": {"type": "integer"},
                 "verb": {"type": "string", "enum": ["click", "fill", "select", "check", "uncheck", "scroll", "expand"]},
                 "target": {"type": "integer", "description": "The passage number, without the r."},
-                "value": {"type": "string"},
+                "value": {"type": "string", "maxLength": 4096},
                 "direction": {"type": "string", "enum": ["up", "down"]}
             }, "required": ["tab", "read", "verb"]}), false, true),
     ]
 }
+
+/// The longest `act` value, in characters.
+const MAX_VALUE_CHARS: usize = 4096;
 
 pub(crate) fn text<'a>(args: &'a Map<String, Value>, key: &str) -> Result<&'a str, Refusal> {
     args.get(key)
@@ -95,15 +98,17 @@ pub(crate) fn step(args: &Map<String, Value>) -> Result<StepIn, Refusal> {
     {
         return Err(Refusal::Invalid("`direction` is up or down."));
     }
+    let value = args.get("value").and_then(Value::as_str);
+    // Refused, not cut: the person confirms the value Claude sent.
+    if value.is_some_and(|value| value.chars().count() > MAX_VALUE_CHARS) {
+        return Err(Refusal::Invalid("`value` is longer than 4096 characters."));
+    }
     Ok(StepIn {
         tab: text(args, "tab")?.to_owned(),
         read,
         verb: text(args, "verb")?.to_owned(),
         target,
-        value: args
-            .get("value")
-            .and_then(Value::as_str)
-            .map(|v| v.chars().take(4096).collect()),
+        value: value.map(str::to_owned),
         direction,
     })
 }
