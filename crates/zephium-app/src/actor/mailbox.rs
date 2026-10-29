@@ -1219,6 +1219,11 @@ fn command_is_critical(command: &Command) -> bool {
     if matches!(command, Command::WorkWake) {
         return true;
     }
+    // rice fork: an empty region list lowers the chrome; losing it would
+    // leave the chrome over the page.
+    if matches!(command, Command::ChromeRegions(regions) if regions.is_empty()) {
+        return true;
+    }
     matches!(
         command,
         Command::SetWindowFocused(false)

@@ -637,6 +637,11 @@ pub(crate) struct EngineHost {
     stages: HashMap<WindowId, Retained<ContentStage>>,
     #[cfg(not(target_os = "macos"))]
     stages: HashMap<WindowId, crate::platform::imp::Stage>,
+    /// rice fork: each window's latest chrome input regions, kept so a
+    /// stage created after they were sent (or succeeding a retired one)
+    /// starts with the chrome where the frame believes it is.
+    #[cfg(target_os = "macos")]
+    chrome_regions: HashMap<WindowId, Vec<zephium_core::geometry::Rect>>,
     // Native callback admission failure, exhausted stage retries, or
     // unverifiable teardown must seal outer lifecycle/event authority before
     // the mandatory fatal path.

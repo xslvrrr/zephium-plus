@@ -5,6 +5,11 @@ import { commands } from "$shared/ipc/bindings";
  * rice fork: the rects where the chrome takes the mouse while it is over the
  * page. Each owner (the notch, the window-controls group, a peeking card)
  * claims at most one rect; the union goes to native once per frame.
+ *
+ * While raised, the chrome document takes no pointer events except on
+ * elements marked `data-chrome-region` (rice.css): an owner puts that
+ * attribute on the element whose rect it claims, and on anything that opens
+ * from it inside the rect (menus, popovers), or those stay dead to the mouse.
  */
 const claims = new SvelteMap<symbol, DOMRect>();
 let raised = $state(false);

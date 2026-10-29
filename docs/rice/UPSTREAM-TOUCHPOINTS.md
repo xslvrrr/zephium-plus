@@ -15,7 +15,7 @@ Rebase conflicts appear only in these files.
 | `crates/zephium-core/src/layout.rs` | `Metrics.spans`: the chrome spans the window beneath the page in every shape (`sidebar()` chrome width); the page's rect is upstream's |
 | `crates/zephium-core/src/windows.rs` | `Windows::iter_mut` |
 | `crates/zephium-app/src/shell/mod.rs` | `chrome_spans` field, seeded from `ui.toolbar`; `Command::ChromeRegions` arm: clamps the rects to the focused window (at most 8) and calls `set_chrome_regions` |
-| `crates/zephium-app/src/shell/bootstrap.rs` | Seeds `metrics.spans` on each new Main window |
+| `crates/zephium-app/src/shell/bootstrap.rs` | Seeds `metrics.spans` on each new Main window; the chrome-reload branch clears the chrome regions (`set_chrome_regions(win.id, Vec::new())`) |
 | `crates/zephium-app/src/shell/operations.rs` | `ui.toolbar` setting sets `chrome_spans`, updates all Main windows' `metrics.spans` and relayouts |
 | `frame/src/features/sidebar/components/SidebarHeader.svelte` | Nav buttons extracted to `NavControls.svelte` (an extraction: upstream edits to the nav buttons conflict here and must be ported by hand into `NavControls`); `navControls` prop hides only them; the sidebar menu's opening and its `extension.action=` handling moved to `lib/sidebar-menu.ts` |
 | `frame/src/features/sidebar/index.ts` | Exports `McpIndicator` |
@@ -40,8 +40,10 @@ Rebase conflicts appear only in these files.
 | `vendor/wry/src/wkwebview/class/wry_web_view.rs` | `input_rects` ivar; `hitTest:` passes through outside those rects (`takes_input_at`); `set_input_rects` |
 | `vendor/wry/src/wkwebview/mod.rs` | Initialises the `input_rects` ivar beside `skips_hit_test` |
 | `crates/zephium-core/src/ports/engine.rs` | `Engine::set_chrome_regions` (default `Unsupported`) after `raise_chrome` |
-| `crates/zephium-engine/src/host/stages.rs` | macOS `set_chrome_regions` forwarding to the window's stage |
+| `crates/zephium-engine/src/host/stages.rs` | macOS `set_chrome_regions` forwarding to the window's stage and keeping the list in `chrome_regions`; macOS `ensure_stage` applies a kept list to a new stage |
+| `crates/zephium-engine/src/host/mod.rs` | macOS `chrome_regions: HashMap<WindowId, Vec<Rect>>` on `EngineHost` |
+| `crates/zephium-engine/src/host/dispatch.rs` | Initialises `chrome_regions` (macOS) beside `stages` |
 | `crates/zephium-engine/src/platform/macos/stage.rs` | `peek_raised` / `region_raised` ivars; `raise_chrome` and `set_chrome_regions` set one each and call `restack` (upstream's `raise_chrome` body, parking page tracking only for a whole-view raise); `chrome_view`; `retire` clears the chrome's input rects |
 | `crates/zephium-app/src/api.rs` | `Command::ChromeRegions(Vec<Rect>)` |
-| `crates/zephium-app/src/actor/mailbox.rs` | `CoalescedKey::ChromeRegions`: each region list replaces the last |
+| `crates/zephium-app/src/actor/mailbox.rs` | `CoalescedKey::ChromeRegions`: each region list replaces the last; an empty `ChromeRegions` is critical in `command_is_critical` |
 | `frame/src/shared/ipc/bindings.ts` | Generated: `commands.chromeRegions` and `RegionRect` |

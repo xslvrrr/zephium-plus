@@ -12,7 +12,23 @@
 }
 
 /* While the chrome is over the page it paints nothing there but the notch
-   and the controls; the body's ground would cover the page. */
+   and the controls; the document's grounds would cover the page. Important:
+   it must win over every tier's ground (Solid's opaque body, the bootstrap
+   paint, forced colours' Canvas) whatever their order or specificity, since
+   an opaque ground here hides the page entirely. */
+:root[data-chrome-raised],
+:root[data-chrome-raised] body,
+:root[data-chrome-raised] #root {
+  background: transparent !important;
+}
+
+/* WebKit still delivers hover and moves to the raised chrome across the
+   whole window; only what an owner claimed (`data-chrome-region`, see
+   session/chrome-regions.svelte.ts) takes the pointer. */
 :root[data-chrome-raised] body {
-  background: transparent;
+  pointer-events: none;
+}
+
+:root[data-chrome-raised] [data-chrome-region] {
+  pointer-events: auto;
 }

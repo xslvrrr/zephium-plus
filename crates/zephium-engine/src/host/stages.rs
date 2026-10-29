@@ -373,11 +373,18 @@ impl EngineHost {
         }
     }
 
-    /// rice fork: the chrome's input regions over this window's stage.
+    /// rice fork: the chrome's input regions over this window's stage. The
+    /// list is kept for a stage that does not exist yet: `ensure_stage`
+    /// applies it to the next one.
     #[cfg(target_os = "macos")]
     pub(crate) fn set_chrome_regions(&mut self, window: WindowId, regions: Vec<Rect>) {
         if let Some(stage) = self.stages.get(&window) {
             stage.set_chrome_regions(&regions);
+        }
+        if regions.is_empty() {
+            self.chrome_regions.remove(&window);
+        } else {
+            self.chrome_regions.insert(window, regions);
         }
     }
 
@@ -617,6 +624,11 @@ impl EngineHost {
         }));
         content.addSubview(&stage);
         stage.cover_pointer();
+        // rice fork: regions sent before this stage existed raise the chrome
+        // over it now; added last, the stage would otherwise cover it.
+        if let Some(regions) = self.chrome_regions.get(&window) {
+            stage.set_chrome_regions(regions);
+        }
         self.stages.insert(window, stage.clone());
         Some(stage)
     }
