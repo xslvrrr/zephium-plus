@@ -40,6 +40,12 @@
     background: var(--color-success);
   }
 
+  @media (forced-colors: active) {
+    .dot {
+      background: CanvasText;
+    }
+  }
+
   .label {
     flex: 1;
     min-inline-size: 0;
