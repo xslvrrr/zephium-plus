@@ -13,7 +13,7 @@ use zephium_app::{Command, Handle};
 const FILE: &str = "rice-theme.json";
 const MAX_FILE_BYTES: u64 = 16 * 1024;
 const PROFILE_BUDGET: Duration = Duration::from_secs(60);
-const MAX_TEXTURE_BYTES: u64 = 8 * 1024 * 1024;
+pub(crate) const MAX_TEXTURE_BYTES: u64 = 8 * 1024 * 1024;
 
 #[derive(Debug, Default, Deserialize)]
 struct RiceTheme {
@@ -106,8 +106,8 @@ fn set(shell: &Handle, key: &str, value: String) {
 
 /// The current profile, once the shell is admitted. At launch the shell is
 /// still suspended, so each request may sit queued; ask again until the budget
-/// is spent.
-fn current_profile(shell: &Handle) -> Option<zephium_core::ids::ProfileId> {
+/// is spent. Also the native texture backdrop's way to its profile.
+pub(crate) fn current_profile(shell: &Handle) -> Option<zephium_core::ids::ProfileId> {
     let deadline = std::time::Instant::now() + PROFILE_BUDGET;
     loop {
         let reply = shell.profiles().recv_timeout(Duration::from_secs(8));
@@ -117,6 +117,8 @@ fn current_profile(shell: &Handle) -> Option<zephium_core::ids::ProfileId> {
         if std::time::Instant::now() >= deadline {
             return None;
         }
+        // A refused request answers at once; do not spin on it.
+        std::thread::sleep(Duration::from_millis(250));
     }
 }
 

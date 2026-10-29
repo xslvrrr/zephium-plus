@@ -1,4 +1,6 @@
 mod log;
+/// rice fork: the native texture backdrop.
+pub mod rice_backdrop;
 mod sidebar_edge;
 mod sidebar_resize;
 mod swipe;
@@ -279,6 +281,8 @@ pub fn to_window(x: f64, y: f64) -> (f64, f64) {
 
 pub fn init(window: &WebviewWindow) -> bool {
     crate::material::install(window, false);
+    // rice fork: the texture, above the material and below every webview.
+    rice_backdrop::install(window);
     super::window_controls::install(window);
     super::window_controls::set_bare(
         window,

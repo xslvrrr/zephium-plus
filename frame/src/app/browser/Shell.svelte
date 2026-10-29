@@ -12,7 +12,6 @@
   import LazyView from "$shared/ui/LazyView";
   import type { TabView } from "$shared/ipc/bindings";
   import { newTabImage } from "$session/newtab-background.svelte";
-  import RiceTexture from "./RiceTexture.svelte";
   import Toolbar from "./Toolbar.svelte";
   import SkyLight from "./SkyLight.svelte";
   import RenderBoundary from "$shared/ui/RenderBoundary";
@@ -380,7 +379,6 @@
   data-private={incognito || undefined}
 >
   {#if !newTabImage()}<SkyLight shown={skyShown} />{/if}
-  <RiceTexture />
   <Sidebar
     >{#snippet browserBody(compact)}
       {#if compact && (inWork || paneled)}
@@ -569,9 +567,7 @@
                 onaccount={openAccount}
                 ontasks={() => void browserPage.open("tasks")}
                 ontime={() => void browserPage.open("time")}
-                >{#snippet texture()}<RiceTexture
-                    fill="page"
-                  />{/snippet}{#snippet search()}{#key tabs.activeId()}<LazyView
+                >{#snippet search()}{#key tabs.activeId()}<LazyView
                       loader={loadNewTabSearch}
                       loadingLabel={m.surface_loading()}
                       failureLabel={m.surface_render_failed()}

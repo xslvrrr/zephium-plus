@@ -6999,6 +6999,20 @@ pub fn run() {
                             });
                         }
                     }
+                    // rice fork: the native texture backdrop follows the
+                    // texture and its strength.
+                    #[cfg(target_os = "macos")]
+                    if let Some((key, value)) = id
+                        .strip_prefix("preference.")
+                        .and_then(|rest| rest.split_once('='))
+                        .filter(|(key, _)| matches!(*key, "ui.texture" | "ui.texture-opacity"))
+                    {
+                        platform::imp::rice_backdrop::follow(key, value);
+                        let app = emit_handle.clone();
+                        let _ = emit_handle.run_on_main_thread(move || {
+                            platform::imp::rice_backdrop::refresh_all(&app);
+                        });
+                    }
                     if let Some(value) = id.strip_prefix("preference.ui.radius=") {
                         if let Ok(radius) = value.parse::<f64>() {
                             zephium_engine::set_page_radius(radius);

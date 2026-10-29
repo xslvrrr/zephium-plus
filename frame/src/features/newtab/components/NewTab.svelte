@@ -38,7 +38,6 @@
 
   let {
     search,
-    texture,
     oncustomize,
     onaccount,
     ontasks,
@@ -46,8 +45,6 @@
   }: {
     /** The field that hangs in the notch. */
     search: Snippet;
-    /** rice fork: drawn over the page's ground, under everything on it. */
-    texture?: Snippet;
     /** Opens this page's settings. */
     oncustomize?: () => void;
     /** Opens the account in Settings, or straight onto buying credits. */
@@ -352,7 +349,6 @@
           style:background-size={`${sky.w}px ${sky.h}px`}
           style:background-position={`${sky.x}px ${sky.y}px`}
         ></div>{/if}
-      {@render texture?.()}
     </div>{/if}
 
   <!-- Light caught along the edge where the page meets the window, fading

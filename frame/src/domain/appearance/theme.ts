@@ -122,19 +122,12 @@ export function applyLayout(axes: { density: "compact" | "comfortable"; contrast
   document.documentElement.setAttribute("data-contrast", String(axes.contrast));
 }
 
-/** rice fork: the toolbar's place, the shared radius, whether a texture is
- *  set and its strength. */
-export function applyRice(axes: {
-  toolbar: "sidebar" | "top";
-  radius: number;
-  texture: boolean;
-  textureOpacity: number;
-}) {
+/** rice fork: the toolbar's place and the shared radius. The texture is
+ *  drawn natively, beneath the chrome and the pages. */
+export function applyRice(axes: { toolbar: "sidebar" | "top"; radius: number }) {
   const root = document.documentElement;
   root.setAttribute("data-toolbar", axes.toolbar);
-  root.toggleAttribute("data-texture", axes.texture);
   root.style.setProperty("--rice-radius", `${axes.radius}px`);
-  root.style.setProperty("--rice-texture-opacity", String(axes.textureOpacity / 100));
 }
 
 function apply() {

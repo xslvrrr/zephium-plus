@@ -2,7 +2,6 @@
    semantic radius tokens, never these names directly. */
 :root {
   --rice-radius: 12px;
-  --rice-texture-opacity: 0.15;
   --rice-toolbar-height: 44px;
 
   /* One radius drives the page frame and the cards around it, so the content
@@ -11,12 +10,4 @@
   --content-radius: var(--rice-radius);
   --radius-card: calc(var(--rice-radius) + 6px);
   --radius-panel: calc(var(--rice-radius) + 10px);
-}
-
-/* With a texture set, the texture is a fixed, positioned layer at z-index 0
-   in the shell. The stage column is not positioned, so lift it above the
-   layer. Without a texture nothing changes upstream's stacking. */
-:root[data-texture] .shell > .stage-column {
-  position: relative;
-  z-index: 1;
 }
