@@ -31,9 +31,13 @@
 
   let {
     compact = false,
+    launcherEdit = true,
     trailing,
   }: {
     compact?: boolean;
+    /** rice fork: false keeps ⌘L in this field over a page too; the notch's
+     *  field has the room the launcher is wanted for. */
+    launcherEdit?: boolean;
     /** Controls that act on the page, at the far end of the field. Told which
      *  page it is, or null where there is no site to describe. */
     trailing?: Snippet<[SitePage | null]>;
@@ -122,6 +126,7 @@
    *  sidebar-wide field cannot show; a click edits it here. False where
    *  there is no page to edit and the field takes the typing. */
   function editInLauncher(): boolean {
+    if (!launcherEdit) return false;
     const tab = tabs.activeTab();
     if (!tab?.url || (tab.content ?? "web") !== "web") return false;
     // Work has no page in front, so there the launcher opens empty.

@@ -243,7 +243,7 @@
       if (command.id === "page.copyLink") void tabs.copyActiveLink().then(linkCopied);
       if (command.id === "tab.clearSiteData") clearRequest.ask(tabs.takeMenuTargetUrl());
       if (command.id === "page.clearSiteData") clearRequest.ask(tabs.activeTab()?.url);
-      if (command.id === "url.focus" && notched) void focusNotchAddress();
+      if (command.id === "url.focus" && notched) void focusInNotch(addressCommand, NOTCH_ADDRESS);
       if (command.id === "find.show") findInPage.show(tabs.activeId());
       if (command.id === "find.next") findInPage.step(true, tabs.activeId());
       if (command.id === "find.previous") findInPage.step(false, tabs.activeId());
@@ -311,34 +311,58 @@
   $effect(() => {
     const column = stageColumn;
     if (!column || !notched) return;
-    const sizes = new ResizeObserver(() => {
+    const measure = () => {
       const rect = column.getBoundingClientRect();
       const gap = column.matches(COLUMN_AWAY) ? 0 : PAGE_GAP;
       pageColumn = { x: rect.x + gap, width: Math.max(0, rect.width - gap) };
-    });
+    };
+    // Measured at once, so the notch and its field (native's presentation
+    // barrier reads the address through it) are there from the first frame.
+    measure();
+    const sizes = new ResizeObserver(measure);
     sizes.observe(column);
     return () => sizes.disconnect();
   });
-  // rice fork: ⌘L brings the notch down before the field takes focus: the
-  // notch is inert while it is up, so the field's own focus finds nothing to
-  // take it. Held only until the field is focused, when the notch's own focus
-  // hold takes over, so nothing is left holding it. A page in front edits its
-  // address in the launcher instead (AddressField's `editInLauncher`).
+  // rice fork: whatever asks the notch's field for focus brings the notch
+  // down first: the notch is inert while it is up, so the field's own focus
+  // finds nothing to take it. Held only until the field is focused, when the
+  // notch's own focus hold takes over, so nothing is left holding it.
+  const NOTCH_ADDRESS = "[data-rice-notch] input[data-zephium-address]";
+  const NOTCH_FIND = "[data-rice-notch] input.find-input";
   const addressCommand = Symbol("address command");
-  async function focusNotchAddress() {
-    const tab = tabs.activeTab();
-    if (tab?.url && (tab.content ?? "web") === "web") return;
-    holdNotch(addressCommand, true);
+  const newTabFocus = Symbol("new tab focus");
+  const findFocus = Symbol("find focus");
+  async function focusInNotch(owner: symbol, selector: string) {
+    holdNotch(owner, true);
     await tick();
-    const field = document.querySelector<HTMLInputElement>(
-      "[data-rice-notch] input[data-zephium-address]",
-    );
+    const field = document.querySelector<HTMLInputElement>(selector);
     if (field && document.activeElement !== field) {
       field.focus({ preventScroll: true });
       field.select();
     }
-    holdNotch(addressCommand, false);
+    holdNotch(owner, false);
   }
+  // rice fork: the new tab's own search takes focus as it mounts, once for
+  // each tab it shows (upstream NewTabSearch, keyed on the tab); in notch mode
+  // the notch's field is that search, so it takes the typing instead.
+  let newTabFocused: string | null = null;
+  $effect(() => {
+    const id = notched && newTabShown && !chromePane ? tabs.activeId() : null;
+    untrack(() => {
+      if (id === newTabFocused) return;
+      newTabFocused = id;
+      if (id !== null) void focusInNotch(newTabFocus, NOTCH_ADDRESS);
+    });
+  });
+  // rice fork: find borrows the address field, so in notch mode it holds the
+  // notch down while it is open, and its asks for focus reach the notch's
+  // field once the notch is down.
+  const findOwner = Symbol("find");
+  $effect(() => holdNotch(findOwner, notched && findInPage.isOpen()));
+  $effect(() => {
+    if (findInPage.focusRequested() === 0 || !notched || !findInPage.isOpen()) return;
+    untrack(() => void focusInNotch(findFocus, NOTCH_FIND));
+  });
   // A tab with nothing to show (a first load that failed, a restored page
   // that did not load, a crash it could not recover from, a page the engine
   // replaced with an empty error document) says why in its pane.
@@ -387,7 +411,8 @@
 </script>
 
 {#snippet addressBlock(compact: boolean)}
-  <AddressField {compact}>
+  <!-- rice fork: in notch mode this is the notch's field, which keeps ⌘L. -->
+  <AddressField {compact} launcherEdit={!notched}>
     {#snippet trailing(page)}
       {@const label =
         page === null
