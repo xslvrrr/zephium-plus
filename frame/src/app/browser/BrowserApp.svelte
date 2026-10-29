@@ -20,6 +20,7 @@
   import { mediaPlayer } from "$domain/media-player";
   import { updates } from "$domain/updates";
   import { focus } from "$domain/time";
+  import { init as initMcp } from "$session/mcp.svelte";
   import { tabs } from "$domain/tabs";
   import { theme } from "$domain/appearance";
   import { uiCommands as ui } from "$domain/ui-commands";
@@ -148,6 +149,7 @@
     // Native offers the player with the same bootstrap that supplies tabs.
     void mediaPlayer.init();
     void focus.init();
+    void initMcp();
     void updates.init();
     void updateNotices.init();
     const extensionsReady = extensions.init();

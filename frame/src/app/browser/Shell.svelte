@@ -67,6 +67,7 @@
     PrivateReturn,
     Sidebar,
     SidebarSearch,
+    McpIndicator,
     SidebarNotice,
     UtilityTray,
     ToolbarUtilities,
@@ -413,6 +414,7 @@
               </p>{/if}
             <SidebarBody pinned={tree.pinned} today={tree.today} {splitting} onSelect={selectTab} />
             <!-- Brief notices and downloads sit at the foot of the column, by the dock. -->
+            <McpIndicator />
             <SidebarNotice />
             {#if tabs.profile()?.id}<DownloadStatus
                 profile={tabs.profile()!.id}

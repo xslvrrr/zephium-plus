@@ -7,6 +7,8 @@
   import Icon from "$shared/ui/Icon";
   import SettingsGroup from "$shared/ui/SettingsGroup";
   import Plug01Icon from "@hugeicons/core-free-icons/Plug01Icon";
+  import { IS_MAC } from "$shared/platform";
+  import ClaudeAccessGroup from "../connections/ClaudeAccessGroup.svelte";
   import CliRow from "../connections/CliRow.svelte";
   import ServerEditor from "../connections/ServerEditor.svelte";
   import ServerRow from "../connections/ServerRow.svelte";
@@ -40,6 +42,7 @@
 {:else if session?.unavailable}
   <p class="connections-note" role="alert">{m.connections_unavailable()}</p>
 {:else}
+  {#if IS_MAC}<ClaudeAccessGroup />{/if}
   <SettingsGroup title={m.connections_mac_group()} description={m.connections_mac_note()}>
     {#each TOOLS as id (id)}<CliRow
         {id}
