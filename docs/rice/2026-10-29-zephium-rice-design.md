@@ -90,13 +90,27 @@ tabs, spaces and its foot.
 - **Native.** Extension action buttons and their popups move to the band. Their
   anchor rects come from the band, using the same native popup path they use
   today.
+- **As built.** The band is drawn only while the sidebar is shown: with the
+  sidebar hidden, both the native layout (`layout::sidebar`, chrome width and
+  content top) and the frame drop the band, the address returns to the sidebar
+  card, and the hidden shape is exactly upstream's. Work also keeps the
+  sidebar's field. The band's utilities control opens the sidebar's native
+  menu (the one the rail uses: page controls, site protection, clearing site
+  data, extension actions), anchored at the band's button; extension popups
+  hang from that anchor. The sidebar's DOM utility tray is not used in the
+  band, because the band sits over the page's column, where a DOM panel would
+  draw under the page view. The rail's own menu stays in top mode; only the
+  sidebar header's back, forward and reload give way to the band's.
 
 ### 1.4 Window controls (`ui.window-controls = hover`)
 
-The traffic lights are hidden with `standardWindowButton(_:).isHidden`. A
-40 × 40 pt region at the window's top-left corner shows them while the pointer
-is inside it, using a native tracking area (no chrome round trip). Fullscreen
-and the content-fullscreen path keep their current behaviour.
+As built (an intentional change from the first design, which hid the buttons
+with `isHidden` and showed them from a 40 × 40 pt tracking region): in hover
+mode the resting discs are not drawn, and the existing AppKit hover fade, the
+same one that lights the buttons in shown mode, reveals them while the pointer
+is over them. The buttons stay in place and accessible, and are lit before they
+can be clicked. No chrome round trip. Fullscreen and the content-fullscreen
+path keep their current behaviour.
 
 ### 1.5 rice texture, radius and accent
 
@@ -143,6 +157,15 @@ while Zephium runs. Instead:
 - rice-owned values win at every launch and file change, like Trance's
   `user.js`. To hand a setting back to Zephium, remove its field.
 - A malformed file is logged and ignored as a whole. Zephium starts normally.
+  A field this build does not know is logged and ignored on its own, so a
+  newer rice never voids the file.
+- As built, the motion-duration fields are out of scope: Zephium has no
+  preferences for them. If rice sends them, they are ignored with a log line
+  like any other unknown field.
+- `"texture": ""` clears `ui.texture`. Settings → Appearance → Toolbar and
+  texture sets each rice preference back by hand (toolbar, window controls,
+  radius, texture strength, clear texture). An unchanged texture file is not
+  imported again: its content digest is compared with the stored `ui.texture`.
 - The rice side adds a `[zephium]` target to `~/rice/theme/targets.toml` and a
   `theme/templates/zephium-theme.json.tmpl` template, tier A, requiring
   `/Applications/Zephium.app`.
