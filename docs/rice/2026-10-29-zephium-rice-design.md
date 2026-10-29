@@ -193,17 +193,23 @@ second transport onto them, not a second automation path.
 - New crate `crates/zephium-mcp-server`, built on `rmcp = 3.5.0` (already
   pinned) with its `server` feature.
 - In the Zephium process, a Unix domain socket at
-  `~/Library/Application Support/app.zephium/mcp.sock`. The socket file is
-  mode `0600` inside a directory of mode `0700`. Every accepted connection is
+  `<app data dir>/mcp/mcp.sock` (for the release profile
+  `~/Library/Application Support/app.zephium/mcp/mcp.sock`; the dev profile
+  uses `app.zephium.dev`). The socket file is mode `0600` inside the `mcp/`
+  directory of mode `0700`. The bridge reads the same default path and
+  honours `ZEPHIUM_MCP_SOCKET` as an override. Every accepted connection is
   checked with `getpeereid`; a peer with another uid is closed immediately.
 - A stdio bridge binary, `zephium-mcp`, ships in
   `Zephium.app/Contents/MacOS/`. It relays stdin and stdout to the socket and
   nothing else.
 - Client configuration:
   - Claude Code: `claude mcp add zephium -- /Applications/Zephium.app/Contents/MacOS/zephium-mcp`
+    (bundled via `bundle.externalBin` in `desktop/tauri.macos.conf.json`; the
+    macOS `beforeBuildCommand` runs `scripts/rice-build-mcp-bridge.sh`. Under
+    `pnpm dev` the bridge is not bundled: run it from `target/release/`.)
   - Claude Desktop: the same command in `claude_desktop_config.json`.
 - If Zephium is not running, the bridge exits with the error "Zephium is not
-  running." It never launches the browser.
+  running, or Claude access is off." It never launches the browser.
 
 ### 2.4 Tools (v1)
 
@@ -229,10 +235,15 @@ Out of v1: screenshots, restyling, Work hand-off.
   is stored per `clientInfo.name` in the profile store and can be revoked in
   Settings.
 - While a client is connected, the sidebar foot shows an indicator with a
-  Disconnect action.
-- Every tool call writes an audit row (client, tool, tab, time, outcome) to the
-  profile store, cleared with browsing data.
-- Private windows and their tabs are never listed or reachable.
+  Stop action. Stop turns `mcp.enabled` off.
+- The admission prompt is bounded at 120 s; no answer counts as Deny.
+- Every tool call writes an audit row (client, tool, tab, time, outcome) to
+  `mcp/mcp-audit.log` in the app data dir: JSON lines, mode `0600`, rotated at
+  1 MiB to `mcp-audit.log.1`. It is not cleared with browsing data.
+- Private windows and their tabs are never listed or reachable; a private tab
+  id answers "No such tab".
+- Calls in flight are cancelled on Stop and on a client cancel.
+- While Claude access is on, the page reader stays on so `read_page` works.
 
 ### 2.6 Failure handling
 

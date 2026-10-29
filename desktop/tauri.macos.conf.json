@@ -1,4 +1,7 @@
 {
+  "build": {
+    "beforeBuildCommand": "sh ../scripts/rice-build-mcp-bridge.sh && pnpm --dir ../frame build"
+  },
   "bundle": {
     "macOS": {
       "entitlements": "Entitlements.plist",
@@ -17,6 +20,9 @@
           "y": 156
         }
       }
-    }
+    },
+    "externalBin": [
+      "binaries/zephium-mcp"
+    ]
   }
 }
