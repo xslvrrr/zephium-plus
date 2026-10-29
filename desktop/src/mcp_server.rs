@@ -6,10 +6,8 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
+use rfd::{AsyncMessageDialog, MessageButtons, MessageDialogResult, MessageLevel};
 use tauri::{AppHandle, Manager};
-use tauri_plugin_dialog::{
-    DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
-};
 use tokio::sync::watch;
 use zephium_app::{Command, Handle};
 use zephium_core::ids::ItemId;
@@ -52,6 +50,51 @@ static GENERATION: AtomicU64 = AtomicU64::new(0);
 static AUDIT: Mutex<()> = Mutex::new(());
 /// The connections with a consent prompt on screen, one entry per prompt.
 static PROMPTS: Mutex<Vec<u64>> = Mutex::new(Vec::new());
+
+/// The person's answer to a consent prompt. Only a press of an Allow button
+/// is an Allow answer: a dialog that failed, was cancelled, closed with
+/// Escape or never answered is `Deny`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Answer {
+    Deny,
+    Allow,
+    AllowOnce,
+    AllowAlways,
+}
+
+impl Answer {
+    /// rfd's raw result, strictly: only `Custom` with an Allow button's exact
+    /// label grants. rfd reports a failed alert, a lost alert thread and a
+    /// dismissal (Escape, GTK's close button) as `Cancel`, and GTK reports
+    /// custom buttons as `Ok`/`Cancel`/`Yes`/`No`; all of those deny. (Not
+    /// tauri-plugin-dialog's result: it turns `Cancel` into the last button's
+    /// label, which here is an Allow.)
+    fn from_dialog(result: MessageDialogResult) -> Self {
+        let MessageDialogResult::Custom(label) = result else {
+            return Self::Deny;
+        };
+        match label.as_str() {
+            ALLOW => Self::Allow,
+            ALLOW_ONCE => Self::AllowOnce,
+            ALLOW_ALWAYS => Self::AllowAlways,
+            _ => Self::Deny,
+        }
+    }
+}
+
+/// Shows `dialog` as tauri-plugin-dialog does: built and shown from the main
+/// thread, its result awaited on the async runtime. When the dialog cannot be
+/// shown, `answered` is dropped without being called.
+fn show_dialog(
+    app: &AppHandle,
+    dialog: AsyncMessageDialog,
+    answered: impl FnOnce(MessageDialogResult) + Send + 'static,
+) {
+    let _ = app.run_on_main_thread(move || {
+        let result = dialog.show();
+        tauri::async_runtime::spawn(async move { answered(result.await) });
+    });
+}
 
 /// A consent prompt's place in `PROMPTS`, held until the person answers it,
 /// not until the asking call ends: a prompt outlives a call that timed out,
@@ -145,7 +188,9 @@ fn prompt_text(text: &str, max: usize) -> String {
 /// A fill's confirm names the value: `Type “value” into “Search”`. The
 /// planner's label is `Type into "Search"`.
 fn fill_label(label: &str, value: &str) -> String {
-    let value = prompt_text(value, MAX_PROMPT_VALUE);
+    // The value's own quotes become `'`, so it cannot close the “…” early
+    // and imitate the confirm's wording.
+    let value = prompt_text(value, MAX_PROMPT_VALUE).replace(['“', '”', '"'], "'");
     let target = label.strip_prefix("Type into ").map(|target| {
         target
             .strip_prefix('"')
@@ -249,7 +294,8 @@ impl DesktopBackend {
     ///
     /// Deny comes first in `buttons`: rfd makes the first button the
     /// default (Return) one on macOS, both for `NSAlert` and for the
-    /// parentless `CFUserNotification` alert, so Return denies.
+    /// parentless `CFUserNotification` alert, so Return denies. Anything
+    /// but a press of an Allow button is `Answer::Deny` (`Answer::from_dialog`).
     ///
     /// `Busy` when this connection already has a prompt on screen or
     /// `MAX_OPEN_PROMPTS` are open; the slot is freed when the person
@@ -259,37 +305,38 @@ impl DesktopBackend {
         connection: u64,
         title: &str,
         body: String,
-        buttons: MessageDialogButtons,
+        buttons: MessageButtons,
         client: &str,
-    ) -> Result<Option<MessageDialogResult>, Refusal> {
+    ) -> Result<Answer, Refusal> {
         let slot = PromptSlot::take(connection)?;
         let (sender, receiver) = tokio::sync::oneshot::channel();
         let app = self.app.clone();
         let client = client.to_owned();
-        self.app
-            .dialog()
-            .message(body)
-            .title(title)
-            .kind(MessageDialogKind::Warning)
-            .buttons(buttons)
-            .show_with_result(move |result| {
-                drop(slot);
-                // `send` fails exactly when the asking call has ended.
-                let Err(late) = sender.send(result) else {
-                    return;
-                };
-                if matches!(&late, MessageDialogResult::Custom(label) if label != DENY) {
-                    app.dialog()
-                        .message(format!(
-                            "{client}'s request had already ended, so nothing was done. It can ask again."
-                        ))
-                        .title("Zephium")
-                        .kind(MessageDialogKind::Info)
-                        .buttons(MessageDialogButtons::Ok)
-                        .show(|_| {});
-                }
-            });
-        Ok(receiver.await.ok())
+        let dialog = AsyncMessageDialog::new()
+            .set_level(MessageLevel::Warning)
+            .set_title(title)
+            .set_description(body)
+            .set_buttons(buttons);
+        show_dialog(&self.app, dialog, move |result| {
+            drop(slot);
+            let answer = Answer::from_dialog(result);
+            // `send` fails exactly when the asking call has ended.
+            let Err(late) = sender.send(answer) else {
+                return;
+            };
+            if late != Answer::Deny {
+                let notice = AsyncMessageDialog::new()
+                    .set_level(MessageLevel::Info)
+                    .set_title("Zephium")
+                    .set_description(format!(
+                        "{client}'s request had already ended, so nothing was done. It can ask again."
+                    ))
+                    .set_buttons(MessageButtons::Ok);
+                show_dialog(&app, notice, |_| {});
+            }
+        });
+        // No answer at all (the dialog could not be shown) denies.
+        Ok(receiver.await.unwrap_or(Answer::Deny))
     }
 
     /// Adds `client` to the always-allowed list, when it still fits.
@@ -467,11 +514,11 @@ impl Backend for DesktopBackend {
                         prompt_text(&action, MAX_PROMPT_ACTION)
                     ),
                     // Deny first: it is the default (Return) button.
-                    MessageDialogButtons::OkCancelCustom(DENY.into(), ALLOW.into()),
+                    MessageButtons::OkCancelCustom(DENY.into(), ALLOW.into()),
                     client,
                 )
                 .await?;
-            Ok(matches!(answer, Some(MessageDialogResult::Custom(label)) if label == ALLOW))
+            Ok(answer == Answer::Allow)
         })
     }
 
@@ -494,7 +541,7 @@ impl Backend for DesktopBackend {
                          Closing tabs and page steps will still ask you each time."
                     ),
                     // Deny first: it is the default (Return) button.
-                    MessageDialogButtons::YesNoCancelCustom(
+                    MessageButtons::YesNoCancelCustom(
                         DENY.into(),
                         ALLOW_ONCE.into(),
                         ALLOW_ALWAYS.into(),
@@ -503,14 +550,14 @@ impl Backend for DesktopBackend {
                 )
                 .await?;
             Ok(match answer {
-                Some(MessageDialogResult::Custom(label)) if label == ALLOW_ALWAYS => {
+                Answer::AllowAlways => {
                     // Read again: another prompt may have added a name meanwhile.
                     let allowed = crate::app_setting("mcp.allowed").unwrap_or_default();
                     self.remember(&allowed, client);
                     true
                 }
-                Some(MessageDialogResult::Custom(label)) => label == ALLOW_ONCE,
-                _ => false,
+                Answer::AllowOnce => true,
+                Answer::Deny | Answer::Allow => false,
             })
         })
     }

@@ -179,6 +179,9 @@ webkit2gtk = { version = "=2.0.2", features = ["v2_40"] }
 [target.'cfg(unix)'.dependencies]
 # rice fork: Zephium as an MCP server over a Unix socket.
 zephium-mcp-server = { workspace = true, optional = true }
+# rice fork: its consent dialogs call rfd directly (the version and features
+# tauri-plugin-dialog uses, so the lockfile keeps one rfd).
+rfd = { version = "=0.16.0", default-features = false, features = ["common-controls-v6"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 async-io = "=2.6.0"

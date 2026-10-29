@@ -36,8 +36,15 @@ dev build after any change to the MCP server, bridge or Connections settings.
    Ask Claude to type some text into a page's search field. Expected: the
    confirm reads `Type “<the text>” into “<field>”`; click Allow and the text
    appears in the field.
-   Prompt limit: ask Claude to close a tab and leave the prompt open until
-   the call times out (30 s), then ask it to close another tab. Expected: the
+   Escape: ask Claude to close a tab and press Escape on the confirm.
+   Expected: Deny, no action: the tab stays open and Claude reports that the
+   person declined. If the prompt ignores Escape and stays open, that is fine
+   too; it must never act. (On Linux, closing the dialog window also denies.)
+   Prompt limit: run this inside ONE interactive `claude` session, not
+   `claude -p` (each `claude -p` opens a new connection, so the
+   one-prompt-per-connection limit never applies). Ask Claude to close a tab
+   and leave the prompt open until the call times out (30 s), then, in the
+   same session, ask it to close another tab. Expected: the
    second call is refused at once with "Another request is waiting for you
    in Zephium." and no second prompt appears. Then click Allow on the first
    prompt: Zephium says the request had already ended and nothing is closed.

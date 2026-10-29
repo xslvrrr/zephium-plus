@@ -254,10 +254,18 @@ As built:
   as its default button: Return denies, and Allow, Allow once and Allow
   always each need a click. rfd makes the first button the default on macOS,
   so Deny is passed first.
+- As built, consent dialogs call rfd directly, not through
+  tauri-plugin-dialog (which reports a cancelled or failed dialog as its last
+  button, here an Allow). Only a press of an Allow, Allow once or Allow always
+  button grants; any other result denies: Escape, a closed window, a dialog
+  that failed to show, or an answer that never arrived. "Allow always" is
+  remembered only on an explicit press of that button.
 - As built, a fill's confirm shows the value to be typed:
   `Type “<value>” into “<field>”`, with control characters replaced and the
-  value cut to 200 characters plus "…" for display. A select's confirm already
-  names the option. The whole action line is capped at 400 characters.
+  value cut to 200 characters plus "…" for display. Quotes in the value
+  (`“`, `”`, `"`) are shown as `'`, so a value cannot imitate the
+  confirm's wording. A select's confirm already names the option. The whole
+  action line is capped at 400 characters.
 - As built, at most one consent prompt is open per connection and three
   across all connections. A call that would open another is refused at once
   with "Another request is waiting for you in Zephium." The limit lives where
