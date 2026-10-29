@@ -73,6 +73,8 @@ pub const KEYS: &[&str] = &[
     "ui.radius",
     "ui.texture",
     "ui.texture-opacity",
+    "mcp.enabled",
+    "mcp.allowed",
 ];
 
 /// SmartScreen ships on. Only an explicit persisted false disables the
@@ -83,6 +85,14 @@ pub fn smartscreen_required(value: Option<&str>) -> bool {
 
 /// Pages "Open specific pages" may hold.
 pub const MAX_STARTUP_PAGES: usize = 10;
+
+/// rice fork: most MCP clients "Allow always" may hold.
+pub const MAX_MCP_CLIENTS: usize = 16;
+
+/// rice fork: the always-allowed MCP client names a stored value holds.
+pub fn mcp_allowed(value: &str) -> Vec<&str> {
+    value.split('\n').filter(|name| !name.is_empty()).collect()
+}
 
 /// The addresses of a stored startup list, as web pages and without
 /// repeats. Text that is not an address is dropped, so a hand-edited store
@@ -233,6 +243,18 @@ pub fn value_allowed(key: &str, value: &str) -> bool {
         "ui.texture-opacity" => value
             .parse::<u8>()
             .is_ok_and(|opacity| opacity <= 40 && value == opacity.to_string()),
+        // rice fork: MCP clients the person chose to always allow.
+        "mcp.allowed" => {
+            value.is_empty() || {
+                let names: Vec<&str> = value.split('\n').collect();
+                names.len() <= MAX_MCP_CLIENTS
+                    && names.iter().enumerate().all(|(index, name)| {
+                        (1..=64).contains(&name.chars().count())
+                            && !name.chars().any(char::is_control)
+                            && !names[..index].contains(name)
+                    })
+            }
+        }
         "ui.newtab-clock-format" => matches!(value, "system" | "12h" | "24h"),
         "ui.tab-layout" => matches!(value, "vertical" | "horizontal"),
         "ui.language" => LANGUAGES.contains(&value),
@@ -343,7 +365,8 @@ pub fn value_allowed(key: &str, value: &str) -> bool {
         | "performance.sleep"
         | "updates.auto-check"
         | "privacy.smartscreen"
-        | "focus.breaks" => {
+        | "focus.breaks"
+        | "mcp.enabled" => {
             matches!(value, "true" | "false")
         }
         _ => false,

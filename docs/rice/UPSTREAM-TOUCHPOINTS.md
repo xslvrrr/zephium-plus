@@ -6,8 +6,8 @@ Rebase conflicts appear only in these files.
 | File | Why |
 |---|---|
 | `desktop/src/updates.rs` | `SUPPORTED = false`: the fork never self-updates |
-| `crates/zephium-core/src/preferences.rs` | Rice preference keys (`ui.toolbar`, `ui.window-controls`, `ui.radius`, `ui.texture`, `ui.texture-opacity`) and `ui.newtab-wordmark` `mark` value |
-| `frame/src/domain/preferences/preferences.svelte.ts` | Frame defaults for the rice preference keys |
+| `crates/zephium-core/src/preferences.rs` | Rice preference keys (`ui.toolbar`, `ui.window-controls`, `ui.radius`, `ui.texture`, `ui.texture-opacity`, `mcp.enabled`, `mcp.allowed`) and `ui.newtab-wordmark` `mark` value; `MAX_MCP_CLIENTS` and `mcp_allowed` for `mcp.allowed` |
+| `frame/src/domain/preferences/preferences.svelte.ts` | Frame defaults for the rice preference keys (including `mcp.enabled`, `mcp.allowed`) |
 | `frame/src/styles/global.css` | One `@import` of `axes/rice.css` after the last axis import |
 | `frame/src/domain/appearance/theme.ts` | `applyRice`: `data-toolbar`, `data-texture` (set only with a valid texture digest), `--rice-radius`, `--rice-texture-opacity` |
 | `frame/src/app/browser/BrowserApp.svelte` | One `$effect` calling `theme.applyRice` from the rice preferences, including whether `ui.texture` is a valid digest |

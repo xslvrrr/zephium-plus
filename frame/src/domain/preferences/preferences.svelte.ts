@@ -73,6 +73,8 @@ const defaults = {
   "ui.radius": "12",
   "ui.texture": "",
   "ui.texture-opacity": "15",
+  "mcp.enabled": "false",
+  "mcp.allowed": "",
 } as const;
 export type PreferenceKey = keyof typeof defaults;
 const values = $state<Record<PreferenceKey, string>>({ ...defaults });
