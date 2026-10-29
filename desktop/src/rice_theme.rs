@@ -24,7 +24,6 @@ struct RiceTheme {
     radius: Option<u8>,
     toolbar: Option<String>,
     window_controls: Option<String>,
-    newtab_mark: Option<bool>,
     /// Fields this build does not know, kept only to name them in the log.
     #[serde(flatten)]
     unknown: BTreeMap<String, serde_json::Value>,
@@ -237,13 +236,6 @@ fn apply(shell: &Handle, path: &Path, memo: &mut Option<TextureMemo>) {
     }
     if let Some(controls) = theme.window_controls {
         set(shell, "ui.window-controls", controls);
-    }
-    if let Some(mark) = theme.newtab_mark {
-        set(
-            shell,
-            "ui.newtab-wordmark",
-            if mark { "mark" } else { "true" }.to_owned(),
-        );
     }
     if let Some(texture) = theme.texture.as_deref() {
         if texture.as_os_str().is_empty() {

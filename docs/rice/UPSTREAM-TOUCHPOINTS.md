@@ -6,7 +6,7 @@ Rebase conflicts appear only in these files.
 | File | Why |
 |---|---|
 | `desktop/src/updates.rs` | `SUPPORTED = false`: the fork never self-updates |
-| `crates/zephium-core/src/preferences.rs` | Rice preference keys (`ui.toolbar`, `ui.window-controls`, `ui.radius`, `ui.texture`, `ui.texture-opacity`, `mcp.enabled`, `mcp.allowed`) and `ui.newtab-wordmark` `mark` value; `MAX_MCP_CLIENTS` and `mcp_allowed` for `mcp.allowed` |
+| `crates/zephium-core/src/preferences.rs` | Rice preference keys (`ui.toolbar`, `ui.window-controls`, `ui.radius`, `ui.texture`, `ui.texture-opacity`, `mcp.enabled`, `mcp.allowed`); `MAX_MCP_CLIENTS` and `mcp_allowed` for `mcp.allowed` |
 | `frame/src/domain/preferences/preferences.svelte.ts` | Frame defaults for the rice preference keys (including `mcp.enabled`, `mcp.allowed`) |
 | `frame/src/styles/global.css` | One `@import` of `axes/rice.css` after the last axis import |
 | `frame/src/domain/appearance/theme.ts` | `applyRice`: `data-toolbar`, `data-texture` (set only with a valid texture digest), `--rice-radius`, `--rice-texture-opacity` |
@@ -25,9 +25,8 @@ Rebase conflicts appear only in these files.
 | `desktop/src/lib.rs` | `mod rice_theme;` and `rice_theme::start(data_dir, shell)` after `external_links::adopt`; seeds `ui.radius` (`set_page_radius`) after `APP_STORE.set`; `preference.ui.window-controls=` and `preference.ui.radius=` arms in the projection hook; MCP (unix + `work-product`): `mod mcp_server;`, `app_store()` beside `app_setting`, `mcp_server::set_enabled` after `page_assist::install` when `mcp.enabled` is on, a `preference.mcp.enabled=` arm in the projection hook, `mcp_server::shutdown()` on `RunEvent::Exit` |
 | `crates/zephium-engine/src/lib.rs` | (Task 7) `PAGE_RADIUS` static with `set_page_radius` / `page_radius` |
 | `crates/zephium-engine/src/host/construction.rs` | (Task 7) macOS page `configure` reads `crate::page_radius()` instead of `12.0` |
-| `frame/src/features/newtab/components/NewTab.svelte` | `mark` wordmark mode: renders `RiceMark`, hides greeting, clock and figures, and drops the notch field, account and customize controls; `texture` snippet drawn over the page's ground |
-| `frame/src/features/settings/components/sections/NewTabPage.svelte` | (Task 8) wordmark Switch becomes a three-way Select |
-| `frame/messages/en.json` | `ntp_wordmark_mark`, `ntp_wordmark_none`; `rice_*` strings for Settings → Appearance → Toolbar and texture; `update_status_unavailable` says the build is a fork updated by rebuilding (other locales keep upstream's text); `mcp_*` strings for Settings → Connections → Claude and the sidebar indicator |
+| `frame/src/features/newtab/components/NewTab.svelte` | `texture` snippet drawn over the page's ground |
+| `frame/messages/en.json` | `rice_*` strings for Settings → Appearance → Toolbar and texture; `update_status_unavailable` says the build is a fork updated by rebuilding (other locales keep upstream's text); `mcp_*` strings for Settings → Connections → Claude and the sidebar indicator |
 | `frame/src/features/settings/components/sections/ConnectionsPage.svelte` | Renders `<ClaudeAccessGroup />` first, on macOS only (the MCP backend is unix-only) |
 | `frame/src/features/settings/components/sections/AppearancePage.svelte` | Imports and renders `<RiceAppearance />` (toolbar, window controls, radius, texture strength, clear texture) before Typography |
 | `desktop/Cargo.toml` | `notify = =8.2.0` (macos_fsevent), same pin as zephium-notes; `sha2 = =0.10.9`, the workspace pin, for the texture's media digest; `zephium-mcp-server` as an optional `cfg(unix)` dependency, enabled by `work-product`; `rfd =0.16.0` (the version and features tauri-plugin-dialog uses) also for `cfg(unix)`, so the MCP consent dialogs call rfd directly on every platform that compiles them (no lockfile change) |

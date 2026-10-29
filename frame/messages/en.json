@@ -3830,8 +3830,6 @@
   "ntp_dim_help": "Darken the image to make text easier to read.",
   "ntp_wordmark": "Wordmark",
   "ntp_wordmark_help": "Show the big Zephium name.",
-  "ntp_wordmark_mark": "Mark only",
-  "ntp_wordmark_none": "None",
   "rice_look": "Toolbar and texture",
   "rice_look_desc": "rice sets these from its theme. Change them here to go back to Zephium's own look.",
   "rice_toolbar": "Toolbar",

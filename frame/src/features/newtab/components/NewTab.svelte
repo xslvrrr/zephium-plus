@@ -35,7 +35,6 @@
     type Scene,
   } from "$shared/sky";
   import NewTabAccount from "./NewTabAccount.svelte";
-  import RiceMark from "./RiceMark.svelte";
 
   let {
     search,
@@ -84,8 +83,7 @@
         })
       : null;
   });
-  let showWordmark = $derived(preferences.value("ui.newtab-wordmark") === "true");
-  let markOnly = $derived(preferences.value("ui.newtab-wordmark") === "mark");
+  let showWordmark = $derived(preferences.value("ui.newtab-wordmark") !== "false");
   let showTrackers = $derived(preferences.value("ui.newtab-trackers") !== "false");
   let showGreeting = $derived(preferences.value("ui.newtab-greeting") === "true");
   let showClock = $derived(preferences.value("ui.newtab-clock") === "true");
@@ -181,21 +179,15 @@
       live = false;
     };
   });
-  // rice fork: the mark stands alone, so it has no field and no controls.
-  let controls = $derived(
-    markOnly
-      ? []
-      : [
-          ...(showAccount ? [account.signedIn ? 32 : Math.max(32, signInWidth)] : []),
-          ...(oncustomize ? [32] : []),
-        ],
-  );
+  let controls = $derived([
+    ...(showAccount ? [account.signedIn ? 32 : Math.max(32, signInWidth)] : []),
+    ...(oncustomize ? [32] : []),
+  ]);
   let page = $derived(
     layout(width, height, {
       controls,
-      clock: showClock && !markOnly,
+      clock: showClock,
       wordmark: showWordmark,
-      notched: !markOnly,
     }),
   );
   const at = ({ x, y, w, h }: Box) => `left:${x}px;top:${y}px;width:${w}px;height:${h}px`;
@@ -375,7 +367,6 @@
       <path d={lip} stroke={`url(#${id}-lip)`} />
     </svg>
   {/if}
-  {#if markOnly}<RiceMark />{/if}
 
   <!-- The name, drawn only as large as itself. -->
   {#if showWordmark}<svg class="mark" role="img" aria-label="Zephium" style={at(page.mark)}>
@@ -420,21 +411,17 @@
     style:height={`${page.notch.height}px`}
   ></div>
 
-  {#if !markOnly}<div
-      class="field"
-      style:width={`${fieldWidth}px`}
-      style:height={`${page.notch.height}px`}
-    >
-      {@render search()}
-    </div>{/if}
+  <div class="field" style:width={`${fieldWidth}px`} style:height={`${page.notch.height}px`}>
+    {@render search()}
+  </div>
 
-  {#if showGreeting && !markOnly}
+  {#if showGreeting}
     <p class="greeting" style:bottom={`${height - page.mark.y + 18}px`}>
       {greeting}
     </p>
   {/if}
 
-  {#if page.when !== null && !markOnly}
+  {#if page.when !== null}
     <p class="when" style:top={`${page.when}px`}>
       <time class="time" datetime={now.toISOString()}
         >{#if face.period !== null && face.periodLeading}<span class="period"
@@ -447,12 +434,12 @@
   {/if}
 
   <!-- Each control a disc of light on the sky, level with the field. -->
-  {#if showAccount && onaccount && !markOnly && page.controls[0]}
+  {#if showAccount && onaccount && page.controls[0]}
     <div class="control" style={at(page.controls[0])}>
       <NewTabAccount {account} {onaccount} bind:signInWidth />
     </div>
   {/if}
-  {#if oncustomize && !markOnly && page.controls.at(-1)}
+  {#if oncustomize && page.controls.at(-1)}
     <div class="control" style={at(page.controls.at(-1)!)}>
       <IconButton
         icon={Settings01Icon}
@@ -468,7 +455,7 @@
   <!-- A private window has no figures; what it promises stands in their place. -->
   {#if incognito}
     <p class="note">{m.ntp_private()}</p>
-  {:else if figures.length && !markOnly}
+  {:else if figures.length}
     <!-- The day in figures, along the foot of the page; they step aside
          while a search is open. -->
     <div class="figures">

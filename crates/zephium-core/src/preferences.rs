@@ -226,8 +226,6 @@ pub fn value_allowed(key: &str, value: &str) -> bool {
                         .bytes()
                         .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
         }
-        // rice fork: `mark` is Trance's centred holographic mark alone.
-        "ui.newtab-wordmark" => matches!(value, "true" | "false" | "mark"),
         "ui.toolbar" => matches!(value, "sidebar" | "top"),
         "ui.window-controls" => matches!(value, "shown" | "hover"),
         "ui.radius" => value
@@ -349,6 +347,7 @@ pub fn value_allowed(key: &str, value: &str) -> bool {
         | "ui.newtab-clock"
         | "ui.newtab-tasks"
         | "ui.newtab-dim"
+        | "ui.newtab-wordmark"
         | "ui.newtab-trackers"
         | "ui.newtab-focus"
         | "ai.enabled"

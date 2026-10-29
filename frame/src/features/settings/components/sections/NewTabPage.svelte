@@ -120,22 +120,12 @@
     title={m.ntp_wordmark()}
     description={m.ntp_wordmark_help()}
   >
-    <Select
+    <Switch
       label={m.ntp_wordmark()}
       labelHidden
-      bind:value={
-        () => {
-          const v = preferences.value("ui.newtab-wordmark");
-          return v === "false" || v === "mark" ? v : "true";
-        },
-        (v) => set("ui.newtab-wordmark", v)
-      }
+      checked={preferences.value("ui.newtab-wordmark") !== "false"}
       disabled={busy}
-      options={[
-        { value: "true", label: m.ntp_wordmark() },
-        { value: "mark", label: m.ntp_wordmark_mark() },
-        { value: "false", label: m.ntp_wordmark_none() },
-      ]}
+      onchange={(v) => set("ui.newtab-wordmark", String(v))}
     />
   </SettingsRow>
   <SettingsRow
