@@ -24,14 +24,25 @@ dev build after any change to the MCP server, bridge or Connections settings.
 2. Register the dev bridge:
    `claude mcp add zephium-dev -e ZEPHIUM_MCP_SOCKET="$D/mcp/mcp.sock" -- "$PWD/target/release/zephium-mcp"`
 3. Run `claude -p "Use the zephium tools: list my tabs, then read the active tab and summarise it in one line."`
-   Expected: Zephium shows the admission prompt naming the client. After
-   "Allow once", Claude lists the tabs and summarises the page. The sidebar
-   shows the "... is using Zephium" indicator.
+   Expected: Zephium shows the admission prompt naming the client, with Deny
+   as the default (highlighted) button. Click "Allow once" (Return would
+   deny). Claude lists the tabs and summarises the page. The sidebar shows the
+   "... is using Zephium" indicator.
 4. After step 3 finishes, check the bridge exits when the client disconnects:
    `pgrep -fl zephium-mcp` prints nothing within a few seconds. The indicator
    disappears.
-5. Ask Claude to close a tab and choose Deny. Expected: the tab stays open and
-   Claude reports that the person declined.
+5. Ask Claude to close a tab and press Return. Expected: Deny is the default
+   button, so the tab stays open and Claude reports that the person declined.
+   Ask Claude to type some text into a page's search field. Expected: the
+   confirm reads `Type “<the text>” into “<field>”`; click Allow and the text
+   appears in the field.
+   Prompt limit: ask Claude to close a tab and leave the prompt open until
+   the call times out (30 s), then ask it to close another tab. Expected: the
+   second call is refused at once with "Another request is waiting for you
+   in Zephium." and no second prompt appears. Then click Allow on the first
+   prompt: Zephium says the request had already ended and nothing is closed.
+   Long page: ask Claude to read a very long page (a long article or
+   documentation index). Expected: the result says `"truncated": true`.
 6. Open a private window and ask Claude to list tabs, then to read a private
    tab id if you know one. Expected: no private tabs are listed; a private tab
    id answers "No such tab".

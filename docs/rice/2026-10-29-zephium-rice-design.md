@@ -229,6 +229,16 @@ second transport onto them, not a second automation path.
 
 Out of v1: screenshots, restyling, Work hand-off.
 
+As built:
+
+- `read_page` keeps passages in reading order up to 256 passages and 48 KiB
+  of passage text plus link addresses (UTF-8 bytes). The passage that crosses
+  the byte bound keeps the text that fits; the rest of the page is dropped and
+  the result carries `"truncated": true` (otherwise `false`). Claude scrolls
+  and reads again for the rest.
+- An `act` `value` longer than 4096 characters is refused, not cut, so the
+  person confirms exactly what Claude sent.
+
 ### 2.5 Consent and visibility
 
 - Preference `mcp.enabled`, default `false`. When off, no socket exists.
@@ -240,6 +250,22 @@ Out of v1: screenshots, restyling, Work hand-off.
 - While a client is connected, the sidebar foot shows an indicator with a
   Stop action. Stop turns `mcp.enabled` off.
 - The admission prompt is bounded at 120 s; no answer counts as Deny.
+- As built, every consent prompt (admission, close tab, page step) has Deny
+  as its default button: Return denies, and Allow, Allow once and Allow
+  always each need a click. rfd makes the first button the default on macOS,
+  so Deny is passed first.
+- As built, a fill's confirm shows the value to be typed:
+  `Type “<value>” into “<field>”`, with control characters replaced and the
+  value cut to 200 characters plus "…" for display. A select's confirm already
+  names the option. The whole action line is capped at 400 characters.
+- As built, at most one consent prompt is open per connection and three
+  across all connections. A call that would open another is refused at once
+  with "Another request is waiting for you in Zephium." The limit lives where
+  the desktop backend shows the prompt (`ask`, shared by admission and
+  confirms), and a prompt holds its place until the person answers it, even
+  after the call that asked has timed out or been cancelled. A refused
+  admission is not remembered, so the next call asks again once the prompt
+  is answered.
 - Every tool call writes an audit row (client, tool, tab, time, outcome) to
   `mcp/mcp-audit.log` in the app data dir: JSON lines, mode `0600`, rotated at
   1 MiB to `mcp-audit.log.1`. It is not cleared with browsing data.
@@ -273,5 +299,7 @@ Per the owner's global policy, no test suites are run. Verification is:
   to keep Zephium's own).
 - Rebranding. The product keeps the Zephium name and icon.
 - Windows and Linux. This fork targets macOS only, though shared code must still
-  compile for the other platforms.
+  compile for the other platforms. As built, `zephium-mcp-server` is
+  `#![cfg(unix)]`: on Windows the library is empty, and the `zephium-mcp`
+  bridge prints "zephium-mcp: macOS/Linux only" and exits 1.
 - Routing Claude subscription credentials into Zephium's own Ask or Work.
