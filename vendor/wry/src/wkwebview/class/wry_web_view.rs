@@ -28,6 +28,19 @@ use objc2_ui_kit::UIEvent as NSEvent;
 #[cfg(target_os = "macos")]
 use objc2_web_kit::WKWebView;
 
+/// rice fork: where a web view standing over another view takes the mouse.
+/// Over `cover` (the view it stands over, read at each hit test so the area
+/// follows that view's frame) only `rects` take input; everywhere else the
+/// web view is still itself and takes it as usual. A chrome over a page
+/// gives the page every point outside its notch, but the chrome beside the
+/// page is still the chrome.
+#[cfg(target_os = "macos")]
+pub struct InputRegions {
+  pub cover: objc2::rc::Weak<NSView>,
+  /// In the web view's own (flipped) coordinates.
+  pub rects: Vec<NSRect>,
+}
+
 pub struct WryWebViewIvars {
   pub(crate) webview_id: String,
   pub(crate) is_child: bool,
@@ -50,11 +63,12 @@ pub struct WryWebViewIvars {
   /// The view is also skipped by hit-testing.
   #[cfg(target_os = "macos")]
   pub(crate) skips_hit_test: std::cell::Cell<bool>,
-  /// rice fork: while `Some`, the view takes the mouse only inside these
-  /// rects (its own, flipped coordinates); elsewhere hit-testing passes
-  /// through to the views beneath it.
+  /// rice fork: while `Some`, the view takes the mouse over its cover only
+  /// inside the regions' rects; elsewhere over the cover hit-testing passes
+  /// through to the views beneath it. Outside the cover it hit-tests as
+  /// usual.
   #[cfg(target_os = "macos")]
-  pub(crate) input_rects: std::cell::RefCell<Option<Vec<NSRect>>>,
+  pub(crate) input_regions: std::cell::RefCell<Option<InputRegions>>,
   pub(crate) custom_protocol_task_ids: Mutex<HashMap<usize, Retained<NSUUID>>>,
   /// One in-flight scope per registered scheme, by protocol index: a slow IPC
   /// call never holds back the app's own assets, nor they it.
@@ -244,11 +258,16 @@ impl WryWebView {
     self.ivars().skips_hit_test.get()
   }
 
-  /// rice fork: whether `point` (in the superview's coordinates) falls
-  /// inside the input rects, or anywhere while there are none.
+  /// rice fork: whether `point` (in the superview's coordinates) takes
+  /// input: anywhere without regions or outside their cover, and over the
+  /// cover only inside a rect.
   fn takes_input_at(&self, point: NSPoint) -> bool {
-    let rects = self.ivars().input_rects.borrow();
-    let Some(rects) = rects.as_ref() else {
+    let regions = self.ivars().input_regions.borrow();
+    let Some(regions) = regions.as_ref() else {
+      return true;
+    };
+    // A cover that is gone limits nothing.
+    let Some(cover) = regions.cover.load() else {
       return true;
     };
     // The conversion goes to the superclass so the cursor guard does not
@@ -257,13 +276,14 @@ impl WryWebView {
     let superview = unsafe { self.superview() };
     let local: NSPoint =
       unsafe { objc2::msg_send![super(self), convertPoint: point, fromView: superview.as_deref()] };
-    rects.iter().any(|rect| NSPointInRect(local, *rect))
+    let covered = self.convertRect_fromView(cover.bounds(), Some(&cover));
+    !NSPointInRect(local, covered) || regions.rects.iter().any(|rect| NSPointInRect(local, *rect))
   }
 
-  /// rice fork: limits mouse input to `rects` (the view's own coordinates),
-  /// or gives it the whole view again with `None`.
-  pub fn set_input_rects(&self, rects: Option<Vec<NSRect>>) {
-    *self.ivars().input_rects.borrow_mut() = rects;
+  /// rice fork: limits mouse input over a cover to its rects, or gives the
+  /// whole view back with `None`.
+  pub fn set_input_regions(&self, regions: Option<InputRegions>) {
+    *self.ivars().input_regions.borrow_mut() = regions;
   }
 
   /// Holds the tracking areas out of the view while it keeps taking clicks

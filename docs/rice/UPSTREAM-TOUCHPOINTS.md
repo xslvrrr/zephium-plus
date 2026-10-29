@@ -37,13 +37,14 @@ Rebase conflicts appear only in these files.
 | `.github/workflows/nightly.yml` | Same bridge step before the macOS coverage job's workspace build |
 | `README.md` | One rice-fork note under "Build from source": run `scripts/rice-build-mcp-bridge.sh` once on macOS before `cargo check`/`pnpm dev` |
 | `.cargo/config.toml` | macOS `rustflags` `-no_fixup_chains`: release builds with Xcode 27's ld otherwise write proc-macro dylibs dyld rejects |
-| `vendor/wry/src/wkwebview/class/wry_web_view.rs` | `input_rects` ivar; `hitTest:` passes through outside those rects (`takes_input_at`); `set_input_rects` |
-| `vendor/wry/src/wkwebview/mod.rs` | Initialises the `input_rects` ivar beside `skips_hit_test` |
+| `vendor/wry/src/wkwebview/class/wry_web_view.rs` | `InputRegions` (a cover view and rects); `input_regions` ivar; `hitTest:` passes through over the cover outside the rects (`takes_input_at`), hit-tests as usual elsewhere; `set_input_regions` |
+| `vendor/wry/src/wkwebview/mod.rs` | Initialises the `input_regions` ivar beside `skips_hit_test`; re-exports `InputRegions` (macOS) |
+| `vendor/wry/src/lib.rs` | Re-exports `wkwebview::InputRegions` (macOS) beside `WryWebView` |
 | `crates/zephium-core/src/ports/engine.rs` | `Engine::set_chrome_regions` (default `Unsupported`) after `raise_chrome` |
 | `crates/zephium-engine/src/host/stages.rs` | macOS `set_chrome_regions` forwarding to the window's stage and keeping the list in `chrome_regions`; macOS `ensure_stage` applies a kept list to a new stage |
 | `crates/zephium-engine/src/host/mod.rs` | macOS `chrome_regions: HashMap<WindowId, Vec<Rect>>` on `EngineHost` |
 | `crates/zephium-engine/src/host/dispatch.rs` | Initialises `chrome_regions` (macOS) beside `stages` |
-| `crates/zephium-engine/src/platform/macos/stage.rs` | `peek_raised` / `region_raised` ivars; `raise_chrome` and `set_chrome_regions` set one each and call `restack` (upstream's `raise_chrome` body, parking page tracking only for a whole-view raise); `chrome_view`; `retire` clears the chrome's input rects |
+| `crates/zephium-engine/src/platform/macos/stage.rs` | `peek_raised` / `region_raised` ivars; `raise_chrome` and `set_chrome_regions` set one each and call `restack` (upstream's `raise_chrome` body, parking page tracking only for a whole-view raise); `set_chrome_regions` passes the stage as the `InputRegions` cover; `chrome_view`; `retire` clears the chrome's input regions |
 | `crates/zephium-app/src/api.rs` | `Command::ChromeRegions(Vec<Rect>)` |
 | `crates/zephium-app/src/actor/mailbox.rs` | `CoalescedKey::ChromeRegions`: each region list replaces the last; an empty `ChromeRegions` is critical in `command_is_critical` |
 | `frame/src/shared/ipc/bindings.ts` | Generated: `commands.chromeRegions` and `RegionRect` |

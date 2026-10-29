@@ -22,13 +22,15 @@
   background: transparent !important;
 }
 
-/* WebKit still delivers hover and moves to the raised chrome across the
-   whole window; only what an owner claimed (`data-chrome-region`, see
-   session/chrome-regions.svelte.ts) takes the pointer. */
-:root[data-chrome-raised] body {
+/* WebKit still delivers hover and moves to the raised chrome over the page;
+   there only what an owner claimed (`data-chrome-region`, see
+   session/chrome-regions.svelte.ts) takes the pointer. The stage column
+   stands exactly where the page does. The chrome beside the page (a shown
+   sidebar) is still the chrome and keeps its pointer, as natively. */
+:root[data-chrome-raised] .shell > .stage-column {
   pointer-events: none;
 }
 
-:root[data-chrome-raised] [data-chrome-region] {
+:root[data-chrome-raised] .shell > .stage-column [data-chrome-region] {
   pointer-events: auto;
 }

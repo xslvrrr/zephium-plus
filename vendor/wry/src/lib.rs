@@ -406,6 +406,9 @@ use objc2_app_kit::NSWindow;
 use objc2_web_kit::WKUserContentController;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub(crate) mod wkwebview;
+/// rice fork: where a web view over another view takes the mouse.
+#[cfg(target_os = "macos")]
+pub use wkwebview::InputRegions;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 use wkwebview::*;
 #[cfg(any(target_os = "macos", target_os = "ios"))]

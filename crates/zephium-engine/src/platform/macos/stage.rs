@@ -891,18 +891,27 @@ impl ContentStage {
     }
 
     /// rice fork: the notch and the window-controls group come over the page
-    /// inside these rects only; the page keeps the rest of the window.
-    /// `regions` are in window top-left points, which are the chrome view's
-    /// own: it stands at the window's origin and is flipped.
+    /// inside these rects only; the page keeps the rest of its own area.
+    /// Only over this stage: the chrome beside the page (a shown sidebar) is
+    /// still the chrome and takes its clicks as usual. The stage is passed as
+    /// the cover and read at each hit test, so the limit follows its frame
+    /// through layout, resizes and slides. `regions` are in window top-left
+    /// points, which are the chrome view's own: it stands at the window's
+    /// origin and is flipped.
     pub fn set_chrome_regions(&self, regions: &[Rect]) {
         let raised = !regions.is_empty();
         self.ivars().region_raised.set(raised);
         if let Some(chrome) = self.chrome_view() {
-            chrome.set_input_rects(raised.then(|| {
-                regions
-                    .iter()
-                    .map(|r| NSRect::new(NSPoint::new(r.x, r.y), NSSize::new(r.width, r.height)))
-                    .collect()
+            chrome.set_input_regions(raised.then(|| {
+                wry::InputRegions {
+                    cover: Weak::from_retained(&Retained::into_super(self.retain())),
+                    rects: regions
+                        .iter()
+                        .map(|r| {
+                            NSRect::new(NSPoint::new(r.x, r.y), NSSize::new(r.width, r.height))
+                        })
+                        .collect(),
+                }
             }));
         }
         self.restack(raised || self.ivars().peek_raised.get());
@@ -995,7 +1004,7 @@ impl ContentStage {
         // the whole view, so a successor finds it as it would a fresh one.
         if self.ivars().region_raised.replace(false) {
             if let Some(chrome) = self.chrome_view() {
-                chrome.set_input_rects(None);
+                chrome.set_input_regions(None);
             }
         }
         self.ivars().pointer_cover.take();

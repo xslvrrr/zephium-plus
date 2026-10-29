@@ -25,6 +25,8 @@ mod class;
 #[cfg(target_os = "macos")]
 mod cursor_guard;
 pub(crate) use class::wry_navigation_delegate::BlockedLoadCounter;
+#[cfg(target_os = "macos")]
+pub use class::wry_web_view::InputRegions;
 pub use class::wry_web_view::WryWebView;
 #[cfg(target_os = "macos")]
 use class::wry_web_view_parent::WryWebViewParent;
@@ -564,7 +566,7 @@ impl InnerWebView {
         #[cfg(target_os = "macos")]
         skips_hit_test: Default::default(),
         #[cfg(target_os = "macos")]
-        input_rects: Default::default(),
+        input_regions: Default::default(),
         custom_protocol_task_ids: Default::default(),
         custom_protocol_admission: (0..protocol_count)
           .map(|_| {
