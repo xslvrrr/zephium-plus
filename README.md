@@ -228,8 +228,13 @@ Prerequisites:
 git clone https://github.com/zephium-browser/Zephium.git
 cd Zephium
 pnpm install --frozen-lockfile
+sh scripts/rice-build-mcp-bridge.sh   # macOS, once; see below
 pnpm dev
 ```
+
+Rice fork: on macOS, Tauri's `externalBin` needs the MCP bridge binary before
+any build of `zephium-desktop` (`cargo check`, `pnpm dev`), so run
+`sh scripts/rice-build-mcp-bridge.sh` once first.
 
 Development builds use their own `app.zephium.dev` profile, so they do not
 touch the data of an installed Zephium. Linux is not supported yet. See

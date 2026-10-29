@@ -196,8 +196,8 @@ second transport onto them, not a second automation path.
   `<app data dir>/mcp/mcp.sock` (for the release profile
   `~/Library/Application Support/app.zephium/mcp/mcp.sock`; the dev profile
   uses `app.zephium.dev`). The socket file is mode `0600` inside the `mcp/`
-  directory of mode `0700`. The bridge reads the same default path and
-  honours `ZEPHIUM_MCP_SOCKET` as an override. Every accepted connection is
+  directory of mode `0700`. The bridge's default path is the release profile's;
+  the dev profile needs `ZEPHIUM_MCP_SOCKET` set to its socket. Every accepted connection is
   checked with `getpeereid`; a peer with another uid is closed immediately.
 - A stdio bridge binary, `zephium-mcp`, ships in
   `Zephium.app/Contents/MacOS/`. It relays stdin and stdout to the socket and
@@ -205,8 +205,11 @@ second transport onto them, not a second automation path.
 - Client configuration:
   - Claude Code: `claude mcp add zephium -- /Applications/Zephium.app/Contents/MacOS/zephium-mcp`
     (bundled via `bundle.externalBin` in `desktop/tauri.macos.conf.json`; the
-    macOS `beforeBuildCommand` runs `scripts/rice-build-mcp-bridge.sh`. Under
-    `pnpm dev` the bridge is not bundled: run it from `target/release/`.)
+    macOS `beforeBuildCommand` runs `scripts/rice-build-mcp-bridge.sh`. The
+    externalBin file must also exist for any macOS build of `zephium-desktop`
+    (`cargo check`, `pnpm dev`): run `sh scripts/rice-build-mcp-bridge.sh`
+    once first; macOS CI does so. Under `pnpm dev` the bridge is the one in
+    `target/release/`.)
   - Claude Desktop: the same command in `claude_desktop_config.json`.
 - If Zephium is not running, the bridge exits with the error "Zephium is not
   running, or Claude access is off." It never launches the browser.

@@ -36,3 +36,6 @@ Rebase conflicts appear only in these files.
 | `desktop/src/page_assist.rs` | Inside `mod product`: `ACTIVE` (focused space, tab, private) mirrored in `observe_items`; `PORTS` (the `DesktopPage`/`DesktopTabs` adapters, built once in `install` and shared with Ask); `mcp_ports`/`mcp_active`/`mcp_tabs`/`mcp_reader`/`mcp_outside_input` (an MCP step pauses an Ask reply acting on that tab via `human_input`) re-exported for `mcp_server`. Every `reader_switch` call now goes through `reader_needed`, so the Browse reader is on while AI or MCP needs it (`ai.enabled` in `preference_changed` and the install-time switch set the AI half) |
 | `Cargo.toml` | `[workspace.dependencies]`: `zephium-mcp-server` (the rice MCP server crate) |
 | `desktop/tauri.macos.conf.json` | `bundle.externalBin` ships the `zephium-mcp` bridge; macOS `beforeBuildCommand` runs `scripts/rice-build-mcp-bridge.sh` before the frame build |
+| `.github/workflows/ci.yml` | macOS Rust job builds the MCP bridge first (`scripts/rice-build-mcp-bridge.sh`): tauri-build's `externalBin` copy fails without it |
+| `.github/workflows/nightly.yml` | Same bridge step before the macOS coverage job's workspace build |
+| `README.md` | One rice-fork note under "Build from source": run `scripts/rice-build-mcp-bridge.sh` once on macOS before `cargo check`/`pnpm dev` |

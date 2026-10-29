@@ -206,6 +206,8 @@ jobs:
         with:
           tool: cargo-llvm-cov@0.8.6,cargo-nextest@0.9.137
           fallback: none
+      - name: MCP bridge (Tauri externalBin)
+        run: sh scripts/rice-build-mcp-bridge.sh
       - run: cargo llvm-cov nextest --locked --workspace --lcov --output-path lcov.info
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

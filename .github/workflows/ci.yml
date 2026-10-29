@@ -180,6 +180,8 @@ jobs:
         with:
           tool: cargo-nextest@0.9.137
           fallback: none
+      - name: MCP bridge (Tauri externalBin)
+        run: sh scripts/rice-build-mcp-bridge.sh
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       # `--all-targets` lets test-only uses hide dead production code.
       - run: cargo clippy --workspace --lib --locked -- -D warnings

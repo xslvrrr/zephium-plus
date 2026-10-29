@@ -6,10 +6,13 @@ dev build after any change to the MCP server, bridge or Connections settings.
 ## Setup
 
 - Dev profile: `pnpm dev` from `desktop/` (profile `app.zephium.dev`).
-- `pnpm dev` does not bundle `externalBin`. Build the bridge yourself and run
-  it from `target/`: `sh scripts/rice-build-mcp-bridge.sh` (produces
-  `target/release/zephium-mcp`). A release bundle (`pnpm tauri build`) runs the
-  script itself and ships `Zephium.app/Contents/MacOS/zephium-mcp`.
+- Prerequisite: Tauri's `externalBin` makes every macOS build of
+  `zephium-desktop` (`cargo check`, clippy, `pnpm dev`) require
+  `desktop/binaries/zephium-mcp-<triple>`. Run
+  `sh scripts/rice-build-mcp-bridge.sh` once before `cargo check`/`pnpm dev`
+  (it also leaves `target/release/zephium-mcp`). `pnpm dev` runs the app from
+  `target/`, so the dev bridge is `target/release/zephium-mcp`; a release
+  bundle ships it as `Zephium.app/Contents/MacOS/zephium-mcp`.
 - Dev app data dir: `D="$HOME/Library/Application Support/app.zephium.dev"`.
 
 ## Steps
