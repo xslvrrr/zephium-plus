@@ -7659,6 +7659,7 @@ dependencies = [
  "zephium-engine",
  "zephium-import",
  "zephium-ipc",
+ "zephium-mcp-server",
  "zephium-notes",
  "zephium-store",
  "zephium-voice",

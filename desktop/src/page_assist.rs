@@ -120,6 +120,51 @@ mod product {
         apply(tabs.get_or_insert_with(HashMap::new))
     }
 
+    /// rice fork: the focused window's space and tab, and whether it is private.
+    type Active = (Option<String>, Option<String>, bool);
+    static ACTIVE: Mutex<Active> = Mutex::new((None, None, false));
+    /// rice fork: the same adapters Ask uses, for the MCP server.
+    static PORTS: OnceLock<(Arc<dyn PagePort>, Arc<dyn Tabs>)> = OnceLock::new();
+
+    #[cfg(unix)]
+    pub(crate) fn mcp_ports() -> Option<(Arc<dyn PagePort>, Arc<dyn Tabs>)> {
+        PORTS.get().cloned()
+    }
+
+    #[cfg(unix)]
+    pub(crate) fn mcp_active() -> Active {
+        ACTIVE.lock().unwrap_or_else(|p| p.into_inner()).clone()
+    }
+
+    /// rice fork: every listed tab outside private windows, in space order,
+    /// as (id, title, url, space).
+    #[cfg(unix)]
+    pub(crate) fn mcp_tabs() -> Vec<(String, String, Option<String>, String)> {
+        let spaces: Vec<(String, Vec<String>)> = with_spaces(|spaces| {
+            spaces
+                .iter()
+                .map(|(space, (_, ids))| (space.clone(), ids.clone()))
+                .collect()
+        });
+        with_tabs(|tabs| {
+            let tabs = &*tabs;
+            spaces
+                .iter()
+                .flat_map(|(space, ids)| {
+                    ids.iter().filter_map(move |id| {
+                        let entry = tabs.get(id).filter(|entry| !entry.private)?;
+                        Some((
+                            id.clone(),
+                            entry.title.clone(),
+                            entry.url.clone(),
+                            space.clone(),
+                        ))
+                    })
+                })
+                .collect()
+        })
+    }
+
     /// Follows one tab's committed address; a change is a navigation.
     fn follow(
         tabs: &mut HashMap<String, TabEntry>,
@@ -183,6 +228,8 @@ mod product {
         }) else {
             return;
         };
+        *ACTIVE.lock().unwrap_or_else(|p| p.into_inner()) =
+            (state.active_space_id.clone(), state.active.clone(), private);
         let space = state.active_space_id.as_deref();
         if let Some(space) = space {
             with_spaces(|spaces| {
@@ -249,7 +296,7 @@ mod product {
             REDUCE_MOTION.store(value == "true", std::sync::atomic::Ordering::Relaxed);
         }
         if key == "ai.enabled" {
-            reader_switch(value != "false");
+            reader_needed(|needs| needs.ai = value != "false");
             if value == "false" {
                 if let Some(service) = service() {
                     service.end_all();
@@ -259,6 +306,32 @@ mod product {
     }
 
     static ENGINE: OnceLock<Arc<zephium_engine::WebviewEngine>> = OnceLock::new();
+
+    /// rice fork: who needs the Browse reader. It is on while Ask (AI on)
+    /// or the MCP server needs it.
+    struct ReaderNeeds {
+        ai: bool,
+        mcp: bool,
+    }
+    static READER_NEEDS: Mutex<ReaderNeeds> = Mutex::new(ReaderNeeds {
+        ai: false,
+        mcp: false,
+    });
+
+    /// Applies `change` and switches the reader to match, under one lock so
+    /// two quick changes cannot land out of order.
+    fn reader_needed(change: impl FnOnce(&mut ReaderNeeds)) {
+        let mut needs = READER_NEEDS.lock().unwrap_or_else(|p| p.into_inner());
+        change(&mut needs);
+        reader_switch(needs.ai || needs.mcp);
+    }
+
+    /// rice fork: the MCP server reads pages even with AI off; off again, the
+    /// reader follows the AI switch alone.
+    #[cfg(unix)]
+    pub(crate) fn mcp_reader(on: bool) {
+        reader_needed(|needs| needs.mcp = on);
+    }
 
     /// Turns the Browse reader on or off in every view. It never runs on a
     /// bank, payment, health or government site.
@@ -1087,17 +1160,20 @@ mod product {
     ) {
         let _ = ENGINE.set(engine.clone());
         zephium_engine::page_reader::set_diagnostics(super::work_provider::record_diagnostic);
-        reader_switch(
-            app.try_state::<keymap::Keymap>()
-                .is_some_and(|keymap| keymap.ai_enabled()),
-        );
+        let ai = app
+            .try_state::<keymap::Keymap>()
+            .is_some_and(|keymap| keymap.ai_enabled());
+        reader_needed(|needs| needs.ai = ai);
         REDUCE_MOTION.store(
             store.app_setting("ui.reduce-motion").as_deref() == Some("true"),
             std::sync::atomic::Ordering::Relaxed,
         );
+        let page: Arc<dyn PagePort> = Arc::new(DesktopPage { engine });
+        let tabs: Arc<dyn Tabs> = Arc::new(DesktopTabs(app.clone(), store.clone()));
+        let _ = PORTS.set((page.clone(), tabs.clone()));
         let service = PageAssist::new(Ports {
-            page: Arc::new(DesktopPage { engine }),
-            tabs: Arc::new(DesktopTabs(app.clone(), store.clone())),
+            page,
+            tabs,
             models: Arc::new(Models),
             events: Arc::new(Events(app.clone())),
             clock: Arc::new(Monotonic(Instant::now())),
@@ -1151,6 +1227,8 @@ mod product {
 pub(crate) use product::{
     hosted_charged, hosted_sourced, install, observe_items, observe_tab, preference_changed,
 };
+#[cfg(all(unix, feature = "work-product"))]
+pub(crate) use product::{mcp_active, mcp_ports, mcp_reader, mcp_tabs};
 
 #[cfg(not(feature = "work-product"))]
 pub(crate) fn observe_items(_state: &zephium_ipc::ItemsState) {}

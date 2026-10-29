@@ -97,6 +97,8 @@ mod linux_shortcut_portal;
 mod linux_x11_shortcut;
 mod login_item;
 mod material;
+#[cfg(all(unix, feature = "work-product"))]
+mod mcp_server;
 mod media;
 mod memory_pressure;
 mod menu_text;
@@ -3574,6 +3576,12 @@ pub(crate) fn app_setting(key: &str) -> Option<String> {
     APP_STORE.get().and_then(|store| store.app_setting(key))
 }
 
+/// rice fork: the app's store, for the MCP server's history search.
+#[cfg(all(unix, feature = "work-product"))]
+pub(crate) fn app_store() -> Option<Arc<SqliteStore>> {
+    APP_STORE.get().cloned()
+}
+
 /// The appearance the app shows, which is the person's choice when they made
 /// one. A window's own theme reports the system's, so a light app on a dark
 /// Mac would otherwise paint its window and tint its glass for dark.
@@ -6230,6 +6238,10 @@ fn handle_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
     if matches!(&event, tauri::RunEvent::Exit) {
         updates::finish_on_exit(app);
     }
+    #[cfg(all(unix, feature = "work-product"))]
+    if matches!(&event, tauri::RunEvent::Exit) {
+        mcp_server::shutdown();
+    }
     #[cfg(target_os = "macos")]
     if let tauri::RunEvent::Opened { urls } = &event {
         external_links::hand_off(app, urls.iter().map(|url| url.to_string()), true);
@@ -6992,6 +7004,10 @@ pub fn run() {
                             zephium_engine::set_page_radius(radius);
                         }
                     }
+                    #[cfg(all(unix, feature = "work-product"))]
+                    if let Some(value) = id.strip_prefix("preference.mcp.enabled=") {
+                        mcp_server::set_enabled(&emit_handle, value == "true");
+                    }
                     if let Some((key, value)) = id.strip_prefix("preference.").and_then(|rest| rest.split_once('=')) {
                         page_assist::preference_changed(key, value);
                         if material::theme_changed(key, value) {
@@ -7168,6 +7184,10 @@ pub fn run() {
             }
             #[cfg(feature = "work-product")]
             page_assist::install(app.handle(), engine.clone(), store.clone());
+            #[cfg(all(unix, feature = "work-product"))]
+            if store.app_setting("mcp.enabled").as_deref() == Some("true") {
+                mcp_server::set_enabled(app.handle(), true);
+            }
             notes::install(app.handle(), &data_dir, store.clone(), &shell);
             external_links::adopt(app.handle());
             rice_theme::start(data_dir.clone(), shell.clone());

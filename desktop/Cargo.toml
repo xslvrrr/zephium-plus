@@ -18,6 +18,7 @@ work-product = [
     "dep:zephium-agent-runtime",
     "dep:zephium-work-composition",
     "zephium-work-composition/durable-runtime",
+    "dep:zephium-mcp-server",
 ]
 # Explicit inspectable public development runs through the ordinary Work UI.
 # The dependency feature rejects optimized builds.
@@ -174,6 +175,10 @@ windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Dw
 zephium-blocker = { workspace = true, features = ["webkit"] }
 gtk = "0.18"
 webkit2gtk = { version = "=2.0.2", features = ["v2_40"] }
+
+[target.'cfg(unix)'.dependencies]
+# rice fork: Zephium as an MCP server over a Unix socket.
+zephium-mcp-server = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 async-io = "=2.6.0"
