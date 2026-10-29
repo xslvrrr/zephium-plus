@@ -114,6 +114,9 @@ mod private_window;
 #[cfg(target_os = "windows")]
 mod privileged_runtime_windows;
 mod profiles;
+// rice fork: named pointer zones, watched natively on macOS only so far.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+mod reach_zones;
 mod recently_closed;
 #[cfg(any(target_os = "macos", target_os = "windows", test))]
 mod renderer_recovery;
@@ -1835,6 +1838,7 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             sidebar_set_hidden,
             sidebar_peek,
             chrome_regions,
+            reach_zones,
             sidebar_resize,
             sidebar_resize_guide,
             tab_drag_over,
@@ -5420,6 +5424,40 @@ fn chrome_regions(caller: WebviewWindow, shell: State<'_, Handle>, rects: Vec<Re
         .map(|r| Rect::new(r.x, r.y, r.width, r.height))
         .collect();
     shell.dispatch(Command::ChromeRegions(regions));
+}
+
+/// rice fork: one named zone the window watches the pointer reach, in window
+/// top-left logical points: reached inside an `activate` rect, held inside
+/// `keep`.
+#[derive(Clone, Debug, serde::Deserialize, specta::Type)]
+pub struct ZoneSpec {
+    pub name: String,
+    pub activate: Vec<RegionRect>,
+    pub keep: RegionRect,
+}
+
+/// rice fork: the zones whose reach the window reports to its chrome.
+#[tauri::command]
+#[specta::specta]
+fn reach_zones(caller: WebviewWindow, zones: Vec<ZoneSpec>) {
+    if !authorize(&caller, CallerPolicy::Main, "reach_zones") {
+        return;
+    }
+    let rect = |r: RegionRect| Rect::new(r.x, r.y, r.width.max(0.0), r.height.max(0.0));
+    let zones: Vec<reach_zones::Zone> = zones
+        .into_iter()
+        .filter(|z| !z.name.is_empty() && z.name.len() <= 32)
+        .take(4)
+        .map(|z| reach_zones::Zone {
+            name: z.name,
+            activate: z.activate.into_iter().take(4).map(rect).collect(),
+            keep: rect(z.keep),
+        })
+        .collect();
+    #[cfg(target_os = "macos")]
+    platform::imp::reach_zones_set(&caller, zones);
+    #[cfg(not(target_os = "macos"))]
+    let _ = zones;
 }
 
 #[tauri::command]

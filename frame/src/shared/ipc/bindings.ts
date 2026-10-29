@@ -543,6 +543,8 @@ export const commands = {
 	 *  rects; empty puts it back beneath unless a hidden sidebar's peek holds it.
 	 */
 	chromeRegions: (rects: RegionRect[]) => __TAURI_INVOKE<void>("chrome_regions", { rects }),
+	/**  rice fork: the zones whose reach the window reports to its chrome. */
+	reachZones: (zones: ZoneSpec[]) => __TAURI_INVOKE<void>("reach_zones", { zones }),
 	sidebarResize: (width: number | null, enabled: boolean, revision: number | null) => __TAURI_INVOKE<boolean>("sidebar_resize", { width, enabled, revision }),
 	sidebarResizeGuide: (width: number | null) => __TAURI_INVOKE<boolean>("sidebar_resize_guide", { width }),
 	tabDragOver: (x: number | null, y: number | null) => __TAURI_INVOKE<void>("tab_drag_over", { x, y }),
@@ -7616,6 +7618,17 @@ export type WorkUsage = {
 export type WorkUsageAccounting = "exact" | "conservative_reservation";
 
 export type WorkUserEdit = { kind: "set_objective"; objective: string } | { kind: "open_question"; prompt: string; options: string[] } | { kind: "answer_question"; id: WorkQuestionId; answer: string } | { kind: "dismiss_question"; id: WorkQuestionId } | { kind: "replace_draft"; proposal: WorkPlanProposal } | { kind: "archive" } | { kind: "restore" } | { kind: "compact_history" };
+
+/**
+ *  rice fork: one named zone the window watches the pointer reach, in window
+ *  top-left logical points: reached inside an `activate` rect, held inside
+ *  `keep`.
+ */
+export type ZoneSpec = {
+	name: string,
+	activate: RegionRect[],
+	keep: RegionRect,
+};
 
 export type ZoomCall =
 /**  The sites the profile zoomed, by name. */

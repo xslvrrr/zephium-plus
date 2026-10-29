@@ -1,4 +1,6 @@
 mod log;
+/// rice fork: named pointer zones the chrome watches over the page.
+mod reach_zone;
 /// rice fork: the native texture backdrop.
 pub mod rice_backdrop;
 mod sidebar_edge;
@@ -667,6 +669,13 @@ pub fn sidebar_card_lights(window: &WebviewWindow, shown: bool) {
             }
         }
     });
+}
+
+/// rice fork: replaces the window's reach zones, watched natively since the
+/// page takes the pointer moves over it.
+pub fn reach_zones_set(window: &WebviewWindow, zones: Vec<crate::reach_zones::Zone>) {
+    let owner = window.clone();
+    let _ = window.run_on_main_thread(move || reach_zone::set(&owner, zones));
 }
 
 /// Native has a new column width; a guide left at another edge goes off.
