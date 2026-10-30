@@ -197,6 +197,32 @@ pub fn page_radius() -> f64 {
     f64::from_bits(PAGE_RADIUS.load(std::sync::atomic::Ordering::Relaxed))
 }
 
+/// rice fork: a host's site style: its CSS, and whether it clears the page's
+/// background.
+pub type SiteStyleResolver = Box<dyn Fn(&str) -> Option<(String, bool)> + Send + Sync>;
+
+static SITE_STYLES: std::sync::RwLock<Option<SiteStyleResolver>> = std::sync::RwLock::new(None);
+
+/// rice fork: the style Browse pages on a host are given (Zen Internet's
+/// site styles), decided by the desktop.
+pub fn set_site_style_resolver(resolver: SiteStyleResolver) {
+    if let Ok(mut slot) = SITE_STYLES.write() {
+        *slot = Some(resolver);
+    }
+}
+
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub(crate) fn site_style_for(host: &str) -> Option<(String, bool)> {
+    SITE_STYLES.read().ok()?.as_ref()?(host)
+}
+
+/// rice fork: open Browse pages ask the resolver again, after a change to
+/// the styles, the settings or the person's overrides. Any thread.
+pub fn refresh_site_styles() {
+    #[cfg(target_os = "macos")]
+    dispatch2::DispatchQueue::main().exec_async(platform::macos::site_sheets::refresh_all);
+}
+
 /// Runs one bounded macOS native-input matrix on the process main thread.
 ///
 /// This diagnostic API is absent from ordinary and optimized builds. It

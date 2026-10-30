@@ -75,6 +75,10 @@ const defaults = {
   "ui.texture-opacity": "15",
   "mcp.enabled": "false",
   "mcp.allowed": "",
+  "ui.page-transparency": "false",
+  "site-styles.enabled": "false",
+  "site-styles.force": "false",
+  "site-styles.auto-update": "true",
 } as const;
 export type PreferenceKey = keyof typeof defaults;
 const values = $state<Record<PreferenceKey, string>>({ ...defaults });

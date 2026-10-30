@@ -550,6 +550,14 @@ export const commands = {
 	 *  the native buttons slide together with it.
 	 */
 	windowGroup: (down: boolean) => __TAURI_INVOKE<void>("window_group", { down }),
+	/**  rice fork: the site styles a host is given and the person's switches. */
+	siteStylesFor: (host: string) => __TAURI_INVOKE<SiteStylesView>("site_styles_for", { host }),
+	/**  rice fork: changes one of a host's site-style switches. */
+	siteStylesSet: (host: string, change: SiteStylesChange) => typedError<SiteStylesView, string>(__TAURI_INVOKE("site_styles_set", { host, change })),
+	/**  rice fork: how many sites have styles and when they were last updated. */
+	siteStylesStatus: () => __TAURI_INVOKE<SiteStylesStatus>("site_styles_status"),
+	/**  rice fork: fetches the site styles now. */
+	siteStylesUpdateNow: () => __TAURI_INVOKE<SiteStylesStatus>("site_styles_update_now"),
 	sidebarResize: (width: number | null, enabled: boolean, revision: number | null) => __TAURI_INVOKE<boolean>("sidebar_resize", { width, enabled, revision }),
 	sidebarResizeGuide: (width: number | null) => __TAURI_INVOKE<boolean>("sidebar_resize_guide", { width }),
 	tabDragOver: (x: number | null, y: number | null) => __TAURI_INVOKE<void>("tab_drag_over", { x, y }),
@@ -1535,6 +1543,14 @@ export type FaviconsView = {
 	surface: IconSurface,
 	profile_id: string,
 	entries: FaviconEntry[],
+};
+
+export type FeatureView = {
+	key: string,
+	title: string,
+	description: string | null,
+	on: boolean,
+	transparency: boolean,
 };
 
 export type FindChanged = FindResultView;
@@ -3095,6 +3111,31 @@ export type SitePermissionsView = {
 	/**  The kinds this platform keeps, in display order. */
 	kinds: SitePermissionKindView[],
 	entries: SitePermissionView[],
+};
+
+export type SiteStylesChange = { kind: "enabled"; on: boolean } | { kind: "forced"; on: boolean } | { kind: "feature"; key: string; on: boolean } | { kind: "reset" };
+
+export type SiteStylesStatus = {
+	sites: number,
+	/**
+	 *  Milliseconds since the Unix epoch of the last successful update or
+	 *  unchanged check; `None` while only the bundled snapshot is in use.
+	 */
+	updated: number | null,
+	updating: boolean,
+	error: string | null,
+};
+
+export type SiteStylesView = {
+	/**  The host, normalized; empty when the page has no host. */
+	host: string,
+	/**  Whether `styles.json` has a style for this host. */
+	styled: boolean,
+	enabled: boolean,
+	forced: boolean,
+	/**  The person changed something here. */
+	changed: boolean,
+	features: FeatureView[],
 };
 
 export type SiteTimeView = {

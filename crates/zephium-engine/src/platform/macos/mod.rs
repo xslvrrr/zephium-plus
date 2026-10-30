@@ -53,6 +53,7 @@ mod navigation;
 pub(crate) mod page_save;
 pub mod private_api;
 pub(crate) mod proxy;
+pub(crate) mod site_sheets;
 pub(crate) use apps::{external_app_name, open_external_app};
 mod paint;
 pub(crate) use paint::{PageSnapshot, PaintCover};

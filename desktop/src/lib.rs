@@ -123,6 +123,7 @@ mod renderer_recovery;
 mod resource_close;
 mod rice_theme;
 mod search_providers;
+mod site_styles;
 mod spaces;
 mod startup_alert;
 #[cfg(feature = "work-development-traces")]
@@ -1840,6 +1841,10 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             chrome_regions,
             reach_zones,
             window_group,
+            site_styles_for,
+            site_styles_set,
+            site_styles_status,
+            site_styles_update_now,
             sidebar_resize,
             sidebar_resize_guide,
             tab_drag_over,
@@ -5490,6 +5495,51 @@ fn window_group(caller: WebviewWindow, down: bool) {
     let _ = down;
 }
 
+/// rice fork: the site styles a host is given and the person's switches.
+#[tauri::command]
+#[specta::specta]
+fn site_styles_for(caller: WebviewWindow, host: String) -> site_styles::SiteStylesView {
+    if !authorize(&caller, CallerPolicy::Main, "site_styles_for") {
+        return site_styles::SiteStylesView::default();
+    }
+    site_styles::view(&host)
+}
+
+/// rice fork: changes one of a host's site-style switches.
+#[tauri::command]
+#[specta::specta]
+fn site_styles_set(
+    caller: WebviewWindow,
+    host: String,
+    change: site_styles::SiteStylesChange,
+) -> Result<site_styles::SiteStylesView, String> {
+    if !authorize(&caller, CallerPolicy::Main, "site_styles_set") {
+        return Err("Not allowed.".to_owned());
+    }
+    site_styles::change(&host, change)
+}
+
+/// rice fork: how many sites have styles and when they were last updated.
+#[tauri::command]
+#[specta::specta]
+fn site_styles_status(caller: WebviewWindow) -> site_styles::SiteStylesStatus {
+    if !authorize(&caller, CallerPolicy::Main, "site_styles_status") {
+        return site_styles::status_unavailable();
+    }
+    site_styles::status()
+}
+
+/// rice fork: fetches the site styles now.
+#[tauri::command]
+#[specta::specta]
+async fn site_styles_update_now(caller: WebviewWindow) -> site_styles::SiteStylesStatus {
+    if !authorize(&caller, CallerPolicy::Main, "site_styles_update_now") {
+        return site_styles::status_unavailable();
+    }
+    let _ = site_styles::update_now().await;
+    site_styles::status()
+}
+
 #[tauri::command]
 #[specta::specta]
 async fn sidebar_resize(caller: WebviewWindow, width: f64, enabled: bool, revision: f64) -> bool {
@@ -7126,6 +7176,15 @@ pub fn run() {
                             zephium_engine::set_page_radius(radius);
                         }
                     }
+                    // rice fork: pages ask for their site styles again.
+                    if let Some((key, value)) = id
+                        .strip_prefix("preference.")
+                        .and_then(|rest| rest.split_once('='))
+                    {
+                        if site_styles::follow(key, value) {
+                            zephium_engine::refresh_site_styles();
+                        }
+                    }
                     #[cfg(all(unix, feature = "work-product"))]
                     if let Some(value) = id.strip_prefix("preference.mcp.enabled=") {
                         mcp_server::set_enabled(&emit_handle, value == "true");
@@ -7313,6 +7372,7 @@ pub fn run() {
             notes::install(app.handle(), &data_dir, store.clone(), &shell);
             external_links::adopt(app.handle());
             rice_theme::start(data_dir.clone(), shell.clone());
+            site_styles::start(&data_dir, app.handle().clone());
             #[cfg(feature = "work-product")]
             favicon_probe::install(&shell);
             let web_extensions = webext::WebExtensions::new(&data_dir);

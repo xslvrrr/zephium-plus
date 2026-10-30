@@ -24,7 +24,17 @@ const IMPLEMENTED: &[(&CStr, &[&CStr])] = &[
     (c"WKBackForwardList", &[c"_clear"]),
     (
         c"WKUserContentController",
-        &[c"_removeAllUserScriptsAssociatedWithContentWorld:"],
+        &[
+            c"_removeAllUserScriptsAssociatedWithContentWorld:",
+            // rice fork: site styles.
+            c"_addUserStyleSheet:",
+            c"_removeUserStyleSheet:",
+        ],
+    ),
+    // rice fork: site styles.
+    (
+        c"_WKUserStyleSheet",
+        &[c"initWithSource:forWKWebView:forMainFrameOnly:includeMatchPatternStrings:excludeMatchPatternStrings:baseURL:level:contentWorld:"],
     ),
     (c"_WKContentRuleListAction", &[c"blockedLoad"]),
     (

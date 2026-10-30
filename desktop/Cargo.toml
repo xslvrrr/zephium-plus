@@ -123,6 +123,9 @@ getrandom = "=0.3.4"
 tauri.workspace = true
 zephium-core.workspace = true
 zephium-ipc.workspace = true
+# rice fork: Zen Internet site styles, and gzip for their bundled snapshot.
+zephium-site-styles.workspace = true
+flate2 = { version = "=1.1.9", default-features = false, features = ["rust_backend"] }
 zephium-app.workspace = true
 zephium-account.workspace = true
 zephium-agent-model-catalog = { workspace = true, optional = true }

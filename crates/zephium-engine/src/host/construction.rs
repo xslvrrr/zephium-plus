@@ -670,6 +670,11 @@ impl EngineHost {
             site_scope.pause.set_statistics(counter.clone());
         }
         let load_site_scope = site_scope.clone();
+        // rice fork: Zen Internet's site styles for this page.
+        #[cfg(target_os = "macos")]
+        let page_sheets = crate::platform::macos::site_sheets::PageSheets::new();
+        #[cfg(target_os = "macos")]
+        let load_page_sheets = page_sheets.clone();
         #[cfg(target_os = "windows")]
         let navigation_site_scope = site_scope.clone();
         let navigation = NavigationEpochTracker::new();
@@ -1335,8 +1340,10 @@ impl EngineHost {
             let scope = site_scope.clone();
             #[cfg(feature = "agentic-browser")]
             let attempt_reader = Rc::downgrade(&page_reader);
+            let attempt_sheets = page_sheets.clone();
             builder = builder.with_main_frame_navigation_attempt_handler(move |target| {
                 scope.navigating(&target);
+                attempt_sheets.navigating(&target);
                 #[cfg(feature = "agentic-browser")]
                 super::page_reader::attempt(&attempt_reader, &target);
             });
@@ -1727,6 +1734,8 @@ impl EngineHost {
                 }
                 NavigationTransition::Redirected(_) => {
                     load_site_scope.navigating(&event.url);
+                    #[cfg(target_os = "macos")]
+                    load_page_sheets.navigating(&event.url);
                     #[cfg(any(target_os = "macos", target_os = "windows"))]
                     if let Some(broker) = load_http_auth.upgrade() {
                         broker.navigation_redirected(&event.url);
@@ -1748,6 +1757,8 @@ impl EngineHost {
                         watch.committed();
                     }
                     load_site_scope.navigating(&event.url);
+                    #[cfg(target_os = "macos")]
+                    load_page_sheets.committed(&event.url);
                     // This identity-bearing native commit, not URL equality or
                     // SourceChanged ordering, authorizes rendered-content
                     // attribution to the final redirect destination.
@@ -2153,6 +2164,8 @@ impl EngineHost {
         crate::platform::macos::autofill::show_key_in_sign_in_fields(
             &crate::platform::imp::native_webview(&view),
         );
+        #[cfg(target_os = "macos")]
+        page_sheets.bind(&crate::platform::imp::native_webview(&view));
         #[cfg(target_os = "windows")]
         let request_witness = crate::platform::imp::RequestWitness::install(
             wry::WebViewExtWindows::webview(&view),

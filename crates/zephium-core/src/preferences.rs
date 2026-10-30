@@ -75,6 +75,10 @@ pub const KEYS: &[&str] = &[
     "ui.texture-opacity",
     "mcp.enabled",
     "mcp.allowed",
+    "ui.page-transparency",
+    "site-styles.enabled",
+    "site-styles.force",
+    "site-styles.auto-update",
 ];
 
 /// SmartScreen ships on. Only an explicit persisted false disables the
@@ -228,6 +232,11 @@ pub fn value_allowed(key: &str, value: &str) -> bool {
         }
         "ui.toolbar" => matches!(value, "sidebar" | "top"),
         "ui.window-controls" => matches!(value, "shown" | "hover"),
+        // rice fork: page transparency and Zen Internet's site styles.
+        "ui.page-transparency"
+        | "site-styles.enabled"
+        | "site-styles.force"
+        | "site-styles.auto-update" => matches!(value, "true" | "false"),
         "ui.radius" => value
             .parse::<u8>()
             .is_ok_and(|radius| radius <= 16 && value == radius.to_string()),

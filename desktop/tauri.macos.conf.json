@@ -23,6 +23,10 @@
     },
     "externalBin": [
       "binaries/zephium-mcp"
-    ]
+    ],
+    "resources": {
+      "resources/site-styles/styles.json.gz": "site-styles/styles.json.gz",
+      "resources/site-styles/LICENSE-my-internet.txt": "licenses/site-styles/my-internet-MIT.txt"
+    }
   }
 }
