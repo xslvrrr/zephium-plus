@@ -80,7 +80,9 @@ pub(crate) fn settings() -> Settings {
     let on = |key| setting(key).as_deref() == Some("true");
     Settings {
         enabled: on("site-styles.enabled"),
-        force: on("site-styles.force"),
+        // Every page is transparent unless turned off: the sites without a
+        // style of their own are forced, as a page with one is.
+        force: setting("site-styles.force").as_deref() != Some("false"),
         transparency: on("ui.page-transparency")
             && crate::material::preference() != crate::material::Preference::None,
     }

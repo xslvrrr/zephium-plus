@@ -25,7 +25,8 @@
   import { mediaPlayer } from "$domain/media-player";
   import { UpdateNotice } from "$features/updates";
   import { EssentialsRail } from "$features/essentials";
-  import { ExtensionsSection } from "$features/extensions";
+  import { ExtensionActions, ExtensionsSection } from "$features/extensions";
+  import { webext } from "$domain/webext";
   import { loadWebExtensionManager, StoreInstallRail } from "$features/webext";
   import { sidebarTree } from "$features/tabs";
   import { SidebarBody } from "$features/tabs";
@@ -57,7 +58,7 @@
   import { loadTasksPage } from "$features/tasks";
   import { loadFocusCover, loadTimePage } from "$features/time";
   import { focus } from "$domain/time";
-  import { loadNewTabSearch } from "$features/search";
+  import { loadAddressSuggestions, loadNewTabSearch } from "$features/search";
   import { loadNewTab } from "$features/newtab";
   import {
     ModeTabs,
@@ -426,7 +427,11 @@
 
 {#snippet addressBlock(compact: boolean)}
   <!-- rice fork: in notch mode this is the notch's field, which keeps ⌘L. -->
-  <AddressField {compact} launcherEdit={!notched}>
+  <AddressField
+    {compact}
+    launcherEdit={!notched}
+    suggest={notched ? loadAddressSuggestions : undefined}
+  >
     {#snippet trailing(page)}
       {@const label =
         page === null
@@ -596,7 +601,11 @@
   {#if grouped}<WindowGroup toggle={groupToggle} newTab={newTabShown || chromePane} />{/if}
   <div class="stage-column" bind:this={stageColumn}>
     {#if notched}<Notch content={pageColumn} newTab={newTabShown || chromePane}
-        >{#snippet address()}{@render addressBlock(false)}{/snippet}</Notch
+        >{#snippet address()}{@render addressBlock(
+            false,
+          )}{/snippet}{#snippet tools()}{#if webext.isAvailable()}<ExtensionActions
+              variant="bar"
+            />{/if}{/snippet}</Notch
       >{/if}
     {#if browserPage.navigationFailed()}<div class="navigation-error" role="alert">
         {m.browser_nav_failed()}

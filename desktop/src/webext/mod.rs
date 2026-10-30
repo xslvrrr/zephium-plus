@@ -638,6 +638,32 @@ pub(crate) async fn web_extension_prepare_file(
     }
 }
 
+/// rice fork: uBlock Origin Lite, Zephium's blocker when it is installed.
+pub(crate) const UBLOCK_ID: &str = "ddkjiahejlhfcafbddmgiahcphecmpfh";
+
+/// rice fork: downloads uBlock Origin Lite from the Chrome Web Store and
+/// returns what the user is asked to approve, as a store page's install does.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn web_extension_prepare_ublock(
+    caller: WebviewWindow,
+    shell: State<'_, Handle>,
+    extensions: State<'_, WebExtensions>,
+) -> Result<WebExtensionReview, String> {
+    if !authorize(&caller, CallerPolicy::Main, "web_extension_prepare_ublock")
+        || shutdown_started(caller.app_handle())
+    {
+        return Err(UNAVAILABLE.into());
+    }
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    return imp::prepare_store(&shell, &extensions, UBLOCK_ID).await;
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = (shell, extensions);
+        Err(UNAVAILABLE.into())
+    }
+}
+
 /// Reviews the newest store version of an extension whose update waits for
 /// the user's approval.
 #[tauri::command]

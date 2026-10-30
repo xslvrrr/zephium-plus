@@ -4,6 +4,7 @@
   import { onMount, untrack } from "svelte";
   import { WebExtensionAccessPrompt, WebExtensionReview } from "$features/webext";
   import { webext } from "$domain/webext";
+  import Ublock from "./Ublock.svelte";
   import { PagePermissionPrompt } from "$features/permissions";
   import { updateNotices } from "$features/updates";
   import * as sidebar from "$session/sidebar-mode.svelte";
@@ -239,6 +240,7 @@
     <Dividers />
   {/if}
 </div>
+<Ublock />
 {#if webext.review() !== null}
   <WebExtensionReview review={webext.review()!} />
 {:else if webext.accessRequest() !== null}

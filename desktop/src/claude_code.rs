@@ -35,6 +35,9 @@ navigate, activate or close a tab, search history, click or fill on a page); the
 approves each action in Zephium. Answer in short Markdown. Do not try to edit files or run \
 commands on the Mac.";
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+pub(crate) mod model;
+
 static NEXT: AtomicU32 = AtomicU32::new(1);
 
 fn runs() -> &'static Mutex<HashMap<u32, Arc<Mutex<Child>>>> {

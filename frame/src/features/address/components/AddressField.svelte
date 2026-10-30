@@ -21,7 +21,7 @@
   import { preferences } from "$domain/preferences";
   import { notchNewTab, setNotchNewTab } from "$session/notch.svelte";
   import * as find from "../lib/find.svelte";
-  import { flushSync, untrack, type Snippet } from "svelte";
+  import { flushSync, untrack, type Component, type Snippet } from "svelte";
   import { duration, easing, reducedMotion } from "$shared/lib/motion";
   import {
     addressSecurity,
@@ -33,18 +33,39 @@
   let {
     compact = false,
     launcherEdit = true,
+    suggest,
     trailing,
   }: {
     compact?: boolean;
     /** rice fork: false keeps ⌘L in this field over a page too; the notch's
      *  field has the room the launcher is wanted for. */
     launcherEdit?: boolean;
+    /** rice fork: suggestions and inline completion under the field while
+     *  it is edited, as the launcher and New Tab offer; loads the sheet. */
+    suggest?: () => Promise<{ default: unknown }>;
     /** Controls that act on the page, at the far end of the field. Told which
      *  page it is, or null where there is no site to describe. */
     trailing?: Snippet<[SitePage | null]>;
   } = $props();
 
-  let input: HTMLInputElement;
+  let input = $state() as HTMLInputElement;
+  // rice fork: the suggestion sheet, loaded the first time the field is
+  // edited, and what it lends the field while it is mounted.
+  type SuggestionsHandle = {
+    changed(value: string): void;
+    compositionStart(): void;
+    compositionEnd(value: string): void;
+    keydown(event: KeyboardEvent): boolean;
+    submit(): boolean;
+  };
+  type SuggestionsProps = {
+    tabId: string;
+    input: HTMLInputElement;
+    newTab: boolean;
+    ondone: () => void;
+  };
+  let Suggestions = $state.raw<Component<SuggestionsProps, SuggestionsHandle> | null>(null);
+  let suggestions = $state<SuggestionsHandle>();
   let findInput: HTMLInputElement | undefined = $state();
   let finding = $derived(find.isOpen());
   let findCount = $derived.by(() => {
@@ -147,6 +168,7 @@
   async function submit(event: SubmitEvent) {
     event.preventDefault();
     if (composing || pending || !value.trim()) return;
+    if (editing && suggestions?.submit()) return;
     const id = tabs.activeId();
     const profile = tabs.profile()?.id;
     // rice fork: the notch's field opened for a new tab opens one.
@@ -181,9 +203,15 @@
     if (!(target instanceof HTMLInputElement)) return;
     failed = false;
     draft = target.value;
+    suggestions?.changed(target.value);
   }
 
   function beginEditing() {
+    if (suggest && !Suggestions)
+      void suggest().then(
+        (module) => (Suggestions = module.default as typeof Suggestions),
+        () => {},
+      );
     // Keep the resting chrome quiet while preserving the complete location
     // when the user explicitly enters edit mode.
     const from = textStart();
@@ -273,7 +301,13 @@
   compact mode it is present and correct but unpainted, and the launcher is the
   visible way to reach it.
 -->
-<form bind:this={form} class="shrink-0" class:pb-2={!compact} onsubmit={submit} role="search">
+<form
+  bind:this={form}
+  class="relative shrink-0"
+  class:pb-2={!compact}
+  onsubmit={submit}
+  role="search"
+>
   <!--
     A refused navigation rings the field, following the shared Field
     convention. The message is announced rather than drawn: a block of text
@@ -325,9 +359,16 @@
         spellcheck="false"
         {value}
         oninput={handleInput}
-        oncompositionstart={() => (composing = true)}
-        oncompositionend={() => (composing = false)}
+        oncompositionstart={() => {
+          composing = true;
+          suggestions?.compositionStart();
+        }}
+        oncompositionend={(event) => {
+          composing = false;
+          suggestions?.compositionEnd(event.currentTarget.value);
+        }}
         onkeydown={(event) => {
+          if (suggestions?.keydown(event)) return;
           if (event.key === "Escape" && !event.isComposing) {
             event.preventDefault();
             failed = false;
@@ -399,6 +440,15 @@
       {#if trailing}{@render trailing(sitePage)}{/if}
     {/if}
   </div>
+  {#if suggest && editing && !compact && Suggestions && tabs.activeId()}
+    {#key tabs.activeId()}<Suggestions
+        bind:this={suggestions}
+        tabId={tabs.activeId()!}
+        {input}
+        newTab={notchNewTab()}
+        ondone={() => input.blur()}
+      />{/key}
+  {/if}
   {#if !compact && listedInstalled}
     {#if removing}
       <div

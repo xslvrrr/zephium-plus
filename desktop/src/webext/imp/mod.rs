@@ -6,7 +6,8 @@ mod response;
 mod updates;
 
 pub(in crate::webext) use install::{
-    choose_file, confirm, discard, prepare, prepare_file, review_update, take_pending,
+    choose_file, confirm, discard, prepare, prepare_file, prepare_store, review_update,
+    take_pending,
 };
 pub(in crate::webext) use updates::start_updates;
 

@@ -77,7 +77,7 @@ const defaults = {
   "mcp.allowed": "",
   "ui.page-transparency": "false",
   "site-styles.enabled": "false",
-  "site-styles.force": "false",
+  "site-styles.force": "true",
   "site-styles.auto-update": "true",
   "ai.claude-code": "false",
 } as const;

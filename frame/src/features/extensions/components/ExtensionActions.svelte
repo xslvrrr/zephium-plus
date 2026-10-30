@@ -4,6 +4,10 @@
   import * as m from "$shared/i18n/messages";
   import ExtensionActionIcon from "./ExtensionActionIcon.svelte";
 
+  /** rice fork: `bar` is a row of the notch toolbar, where each button
+   *  stays and its popup hangs from it. */
+  let { variant = "tray" }: { variant?: "tray" | "bar" } = $props();
+
   let profileId = $derived(tabs.profile()?.id ?? null);
   let tabId = $derived(tabs.activeId());
   let actions = $derived(extensions.activeActions(profileId, tabId));
@@ -14,7 +18,9 @@
   // from the menu's own button, which stays, rather than from a vanished tile.
   const anchor = (tile: HTMLElement) =>
     (
-      tile.closest(".ui-disclosure")?.querySelector<HTMLElement>(":scope > button") ?? tile
+      (variant === "tray" &&
+        tile.closest(".ui-disclosure")?.querySelector<HTMLElement>(":scope > button")) ||
+      tile
     ).getBoundingClientRect();
 
   function invoke(event: MouseEvent, action: (typeof actions)[number]) {
@@ -24,6 +30,8 @@
   }
 
   $effect(() => {
+    // The tray's copy answers an extension's key; the bar's would answer it twice.
+    if (variant === "bar") return;
     const request = shortcut;
     const root = actionRoot;
     if (request === null || root === undefined || profileId === null || tabId === null) return;
@@ -51,6 +59,7 @@
 <div
   bind:this={actionRoot}
   class="actions"
+  data-variant={variant}
   role="group"
   aria-label={m.webext_page_title()}
   data-zephium-extension-actions
@@ -93,6 +102,12 @@
 
   .actions:empty {
     display: none;
+  }
+
+  .actions[data-variant="bar"] {
+    flex: none;
+    flex-wrap: nowrap;
+    gap: 0;
   }
 
   .actions .tile {

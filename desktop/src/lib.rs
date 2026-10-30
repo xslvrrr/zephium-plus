@@ -1773,6 +1773,7 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             webext::web_extension_prepare_file,
             webext::web_extension_review_update,
             webext::web_extension_catalog_icon,
+            webext::web_extension_prepare_ublock,
             browser_credentials::browser_credential_capability,
             browser_credentials::browser_passkey_authorization_request,
             page_permission_respond,
@@ -4441,9 +4442,13 @@ fn browser_open_url(
     url: String,
     new_tab: bool,
 ) -> zephium_ipc::OperationAdmission {
+    // rice fork: the notch's field, opened as a new tab, sends what was
+    // typed; classifying it natively is the omnibox's own guard, as for
+    // tabs_navigate.
     if !authorize(&caller, CallerPolicy::Both, "browser_open_url")
         || !bounded(&url, MAX_NAVIGATION_INPUT_BYTES)
-        || !zephium_core::navigation::is_allowed_str(&url)
+        || !(zephium_core::navigation::is_allowed_str(&url)
+            || (new_tab && caller.label() == MAIN_LABEL))
     {
         return rejected_operation();
     }

@@ -191,8 +191,13 @@ impl Shell {
                 let Some(id) = tab.split_once(':').and_then(|(id, _)| ItemId::parse(id)) else {
                     return false;
                 };
+                // rice fork: in notch mode the notch's field searches for
+                // whatever tab is in front, a page as well as the empty one.
                 if window.active != Some(id)
-                    || self.items.tab(id).is_none_or(|tab| tab.url.is_some())
+                    || self
+                        .items
+                        .tab(id)
+                        .is_none_or(|tab| tab.url.is_some() && !self.chrome_spans)
                     || self.active_browser_page().is_some()
                 {
                     return false;

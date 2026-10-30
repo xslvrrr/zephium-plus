@@ -93,6 +93,19 @@ pub(in crate::webext) async fn prepare(
     review(shell, extensions, target.profile, Source::Store(id, bytes)).await
 }
 
+/// rice fork: reviews an extension straight from the Chrome Web Store, by
+/// its id, without its listing open in a tab.
+pub(in crate::webext) async fn prepare_store(
+    shell: &Handle,
+    extensions: &WebExtensions,
+    id: &str,
+) -> Result<WebExtensionReview, String> {
+    let profile = target(shell, None).await?.profile;
+    let id = ExtensionId::parse(id).ok_or("That isn't an extension.")?;
+    let bytes = download(&id).await?;
+    review(shell, extensions, profile, Source::Store(id, bytes)).await
+}
+
 /// Reviews an extension file or unpacked folder.
 pub(in crate::webext) async fn prepare_file(
     shell: &Handle,

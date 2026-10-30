@@ -5,6 +5,7 @@
   import SettingsRow from "$shared/ui/SettingsRow";
   import Switch from "$shared/ui/Switch";
   import Button from "$shared/ui/Button";
+  import { webext } from "$domain/webext";
 
   let status = $derived(blocker.status());
   let busy = $state(false);
@@ -54,6 +55,22 @@
         (status.desired_enabled !== true && !status.can_enable)}
       onchange={(enabled) => void change(() => blocker.setEnabled(enabled))}
     />
+  </SettingsRow>
+  <!-- rice fork: uBlock Origin Lite stands in for the built-in blocker. -->
+  <SettingsRow
+    title="uBlock Origin Lite"
+    description={webext.named(webext.UBLOCK_ID)
+      ? "Installed. It blocks ads and trackers in place of the built-in protection; its button on the toolbar sets it per site."
+      : "Block with uBlock Origin Lite instead. It is installed from the Chrome Web Store after you review it, and the built-in protection turns off."}
+  >
+    <Button
+      disabled={!webext.isAvailable() ||
+        webext.isInstalling() ||
+        webext.named(webext.UBLOCK_ID) !== null}
+      pending={webext.isPreparing()}
+      onclick={() => void webext.prepareUblock()}
+      >{webext.named(webext.UBLOCK_ID) ? "Installed" : "Install"}</Button
+    >
   </SettingsRow>
   <SettingsRow
     title="Filter lists"

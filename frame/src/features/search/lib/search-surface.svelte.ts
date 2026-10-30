@@ -52,6 +52,11 @@ export function createSearchSurface(options: {
   /** Saves the typed line as a task; resolves to the title saved, or null. */
   onCapture?: (text: string) => Promise<string | null>;
   captureKeys?: string[];
+  /** rice fork: the notch's field, opened as a new tab over a page, opens
+   *  an address in one rather than in the tab it is bound to. */
+  newTab?: () => boolean;
+  /** rice fork: an anchored host's row ran. */
+  onran?: () => void;
 }) {
   const anchored = options.tabId !== null;
 
@@ -246,9 +251,14 @@ export function createSearchSurface(options: {
     running = true;
     failed = false;
     try {
+      const action = row.result.action;
       const admission = anchored
-        ? await settle(commands.newtabRun(row.result.action, expected))
-        : await commands.launcherRun(row.result.action, expected, background);
+        ? await settle(
+            options.newTab?.() && action.type === "OpenUrl"
+              ? commands.browserOpenUrl(action.url, true)
+              : commands.newtabRun(action, expected),
+          )
+        : await commands.launcherRun(action, expected, background);
       if (disposed) return;
       const rejected =
         "accepted" in admission
@@ -256,8 +266,10 @@ export function createSearchSurface(options: {
           : admission.outcome === "failed" || admission.outcome === "rejected";
       running = false;
       if (rejected) failed = true;
-      else if (anchored) open = false;
-      else if (background) announce("opened");
+      else if (anchored) {
+        open = false;
+        options.onran?.();
+      } else if (background) announce("opened");
       else fulfilled = true;
     } catch {
       if (!disposed) {

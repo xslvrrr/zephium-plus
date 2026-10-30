@@ -18,6 +18,7 @@
     content,
     newTab,
     address,
+    tools,
   }: {
     /** The page column, in window points; `top` is the page's top edge. */
     content: { x: number; width: number; top?: number };
@@ -28,6 +29,9 @@
      *  notch holds it; its trailing tray carries the site menu and the
      *  extensions. */
     address: Snippet;
+    /** The extensions' buttons, beside the menu: each opens its popup from
+     *  the notch, as on Zen's toolbar. */
+    tools?: Snippet;
   } = $props();
 
   /** The activation strip along the window's top edge, and how far the
@@ -258,6 +262,7 @@
       <div class="notch-side"><NavControls /></div>
       <div class="notch-address" bind:this={addressBox}>{@render address()}</div>
       <div class="notch-side">
+        {@render tools?.()}
         <IconButton
           icon={EllipsisIcon}
           label={m.ui_sidebar_options()}
@@ -331,6 +336,11 @@
     fill: none;
     stroke: var(--sidebar-card-edge);
     stroke-width: 1;
+  }
+
+  /* Cut into the page, the page's own edge is the notch's outline. */
+  [data-rice-notch][data-cut] .notch-edge {
+    display: none;
   }
 
   /* Inside the flares, the field level in the notch's own depth; what the

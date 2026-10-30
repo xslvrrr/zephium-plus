@@ -86,6 +86,9 @@ export const chooseFile = (folder: boolean) =>
   reviewing(() => commands.webExtensionChooseFile(folder));
 const prepareFile = (path: string) => reviewing(() => commands.webExtensionPrepareFile(path));
 export const reviewUpdate = (id: string) => reviewing(() => commands.webExtensionReviewUpdate(id));
+/** rice fork: uBlock Origin Lite, which stands in for the built-in blocker. */
+export const UBLOCK_ID = "ddkjiahejlhfcafbddmgiahcphecmpfh";
+export const prepareUblock = () => reviewing(() => commands.webExtensionPrepareUblock());
 
 export function listenForDrops(accept: () => boolean = () => true): Promise<() => void> {
   return events.webExtensionDropped.listen((event) => {

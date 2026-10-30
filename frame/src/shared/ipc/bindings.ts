@@ -362,6 +362,11 @@ export const commands = {
 	 */
 	webExtensionCatalogIcon: (token: string) => typedError<string | null, string>(__TAURI_INVOKE("web_extension_catalog_icon", { token })),
 	/**
+	 *  rice fork: downloads uBlock Origin Lite from the Chrome Web Store and
+	 *  returns what the user is asked to approve, as a store page's install does.
+	 */
+	webExtensionPrepareUblock: () => typedError<WebExtensionReview, string>(__TAURI_INVOKE("web_extension_prepare_ublock")),
+	/**
 	 *  Reads only platform capability state. It never enumerates credentials,
 	 *  relying parties, or extension-owned vault data and never opens native UI.
 	 */

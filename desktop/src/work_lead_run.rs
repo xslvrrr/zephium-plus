@@ -13,6 +13,10 @@ pub(crate) async fn models(
     profile: ProfileId,
     work: Option<zephium_core::work::WorkId>,
 ) -> Option<WorkLeadModels> {
+    // rice fork: with Claude Code on, it answers every role.
+    if let Some(models) = crate::claude_code::model::lead_models() {
+        return Some(models);
+    }
     // Hosted calls are noted against their task on this computer, for the
     // usage history; the service is never told the task.
     let source = work.map(|work| zephium_app::work_models::WorkCallSource::Task {
