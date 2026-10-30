@@ -37,7 +37,7 @@ Rebase conflicts appear only in these files.
 | `frame/src/features/newtab/lib/layout.ts` | `notched` option: a page without its field cuts no notch (width 0); the band keeps its depth for the drag strip |
 | `frame/src/features/newtab/components/NewTab.svelte` | `ground?: "sky" \| "none"` prop: `"none"` renders no picture, sky, lip, notch cut (`notched: false`) or `search` field, and takes the chrome's ink (`.bare`) |
 | `desktop/src/page_assist.rs` | Inside `mod product`: `ACTIVE` (focused space, tab, private) mirrored in `observe_items`; `PORTS` (the `DesktopPage`/`DesktopTabs` adapters, built once in `install` and shared with Ask); `mcp_ports`/`mcp_active`/`mcp_tabs`/`mcp_reader`/`mcp_outside_input` (an MCP step pauses an Ask reply acting on that tab via `human_input`) re-exported for `mcp_server`. Every `reader_switch` call now goes through `reader_needed`, so the Browse reader is on while AI or MCP needs it (`ai.enabled` in `preference_changed` and the install-time switch set the AI half) |
-| `Cargo.toml` | `[workspace.dependencies]`: `zephium-mcp-server` (the rice MCP server crate) |
+| `Cargo.toml` | `[workspace.dependencies]`: `zephium-mcp-server` (the rice MCP server crate), `zephium-site-styles` (Zen Internet site styles) |
 | `desktop/tauri.macos.conf.json` | `bundle.externalBin` ships the `zephium-mcp` bridge; macOS `beforeBuildCommand` runs `scripts/rice-build-mcp-bridge.sh` before the frame build |
 | `.github/workflows/ci.yml` | macOS Rust job builds the MCP bridge first (`scripts/rice-build-mcp-bridge.sh`): tauri-build's `externalBin` copy fails without it |
 | `.github/workflows/nightly.yml` | Same bridge step before the macOS coverage job's workspace build |
