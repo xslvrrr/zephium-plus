@@ -206,7 +206,7 @@
           onPointerUp: handlePointerUp,
           onPointerCancel: handlePointerCancel,
         })}
-      {:else}
+      {:else if !emptyTab(unit.tab)}
         <TabRow
           cascade={cascadeFrom + index}
           tab={unit.tab}
@@ -215,7 +215,7 @@
           closable={section === "today" && !tabs.loneNewTab(unit.tab.id)}
           class={[
             variant === "essentials" ? "col-span-full" : "",
-            hiddenUnits.has(unit.key) || emptyTab(unit.tab) ? "hidden" : "",
+            hiddenUnits.has(unit.key) ? "hidden" : "",
           ].join(" ")}
           splitCandidate={splitting && unit.tab.id !== tabs.activeId()}
           onSelect={select}
