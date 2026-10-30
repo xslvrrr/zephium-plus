@@ -319,6 +319,38 @@ Per the owner's global rule, no test suites are run.
 Each plan keeps its own ledger. Every upstream file edited is recorded in
 `docs/rice/UPSTREAM-TOUCHPOINTS.md`.
 
+## 6.1 As built (plans 2 and 3)
+
+- **Spike verdict** (`docs/rice/spikes/2026-10-29-user-style-sheet.md`):
+  `_WKUserStyleSheet` works on macOS 27.2 when created with
+  `forWKWebView: nil`; page-scoped sheets do not reach later documents.
+- **Hook**: `crates/zephium-engine/src/platform/macos/site_sheets.rs`. Each
+  Browse page has a `PageSheets`, told of main-frame navigation attempts
+  (wry's `decidePolicyForNavigationAction`, which also sees redirects), the
+  engine's `Redirected` and `Committed` transitions, and bound to its view
+  after `configure`. It keeps sheets for the committed host and the target
+  host only, so the page being left keeps its style until the next commit.
+- **No Canvas backstop** (differs from §2): a user-level `:root` colour
+  breaks pages that style only `body` (their background stops reaching the
+  canvas). Instead, a page view turns `drawsBackground` off and its
+  under-page colour clear only while its committed host's style includes
+  transparency; every other page paints WebKit's default background as
+  before.
+- **Live changes** (differs from §2 and §3.3): a changed switch, setting or
+  catalog re-resolves every open page's sheets and background at once; no
+  reload is needed.
+- **Transparency features**: any feature whose title contains
+  "transparen" (also one site's "tranparency") follows page transparency,
+  which is off over the Solid material.
+- **Updates**: redirects are followed only to `sameerasw.github.io`, at most
+  three. A failed update keeps the last good catalog and retries hourly.
+- **Size**: `Zephium.app` built at the end of plan 3 measures 46.9 MiB
+  (`du -sk`: 48024 KiB), with `zephium-mcp`, the styles snapshot and its
+  notice inside.
+- **Commands**: `site_styles_for`, `site_styles_set`, `site_styles_status`,
+  `site_styles_update_now`, all `CallerPolicy::Main`. Overrides live in
+  `<data dir>/site-styles/overrides.json` beside the cached `styles.json`.
+
 ## 7. Out of scope
 
 - Zen Internet's custom per-site CSS editor beyond feature switches.

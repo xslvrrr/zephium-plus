@@ -54,3 +54,27 @@ the chrome regions or the window controls. Default settings: `ui.toolbar=top`,
     it may briefly widen a compact sidebar.
 18. Peek mid-resize: resize the window during a peek of the hidden sidebar.
     The card should follow the window; report it if it does not.
+
+## Page transparency and site styles
+
+Defaults from the rice theme: `ui.page-transparency=true`,
+`site-styles.enabled=true`.
+
+19. Settings → Appearance → Site styles: transparent pages and site styles
+    are on; the update row says how many sites and where they came from.
+20. youtube.com and github.com: the window (material and texture) shows
+    through the page background; text stays readable.
+21. An unstyled site (`https://example.org`): opaque, as before.
+22. YouTube's site menu lists its features with their descriptions. Turn one
+    off: the page changes at once, without a reload. Turn it back on.
+23. On an unstyled site, "Make this site transparent": transparent at once.
+    Reset: opaque again.
+24. Settings → "Update now": the status shows the time. With networking off
+    it shows an error, and styles keep working.
+25. Site styles off: every site opaque at once. Transparent pages off: styled
+    sites keep their other features but their own background.
+26. Solid material: the transparent-pages switch is disabled and every page
+    paints its own background.
+27. Navigate from a styled site to an unstyled one and back with the back
+    button: each page has the right background, with no white flash on the
+    styled one.
