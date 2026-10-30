@@ -17,6 +17,7 @@
   import { loadClearSiteData, loadSettings } from "$features/settings";
   import { EssentialTile } from "$features/essentials";
   import { AddressField, SiteDetails, SiteHead, findInPage } from "$features/address";
+  import { SiteStyles } from "$features/site-styles";
   import { SidebarPagePermission } from "$features/permissions";
   import { Dock } from "$features/dock";
   import { DownloadPulse, DownloadStatus } from "$features/downloads";
@@ -442,6 +443,8 @@
           <BlockerShield {open} head={page ? siteHead : undefined} />
           <ExtensionsSection />
           <SiteDetails {page} {open} />
+          <!-- rice fork: Zen Internet's switches for this site. -->
+          <SiteStyles {page} {open} />
         {/snippet}
       </UtilityTray>
     {/snippet}

@@ -8,8 +8,7 @@
   import { mcp } from "$session/mcp.svelte";
 
   // rice fork: the bridge binary ships inside the app bundle.
-  const COMMAND =
-    "claude mcp add zephium -- /Applications/Zephium.app/Contents/MacOS/zephium-mcp";
+  const COMMAND = "claude mcp add zephium -- /Applications/Zephium.app/Contents/MacOS/zephium-mcp";
   let enabled = $derived(preferences.value("mcp.enabled") === "true");
   let allowed = $derived(
     preferences
