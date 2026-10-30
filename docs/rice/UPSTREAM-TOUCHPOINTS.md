@@ -57,5 +57,7 @@ Rebase conflicts appear only in these files.
 | `crates/zephium-engine/src/platform/macos/mod.rs` | `pub(crate) mod site_sheets;` (site styles as WebKit user style sheets); `pub(crate) mod page_notch;`; `stage` is `pub(crate)` for `set_page_notch` |
 | `frame/src/features/assist/components/AssistPanel.svelte` | With `ai.claude-code`, renders `ClaudeCodeChat` in place of the thread and composer; `tool.ai` focuses it |
 | `frame/src/features/settings/components/sections/AiPage.svelte` | Renders `<ClaudeCodeGroup />` after `<AiZephiumRow />` |
-| `frame/src/features/tabs/components/TabList.svelte` | In notch mode an untouched New Tab has no row (`emptyTab`): the empty window is the new tab |
+| `frame/src/features/tabs/components/TabList.svelte` | In notch mode an untouched New Tab's row is hidden (`rice-empty-tab`, `display: none !important`) but kept in the document, which native's return-to-Browse check reads: the empty window is the new tab |
 | `crates/zephium-engine/src/platform/macos/private_api.rs` | Lists `_WKUserStyleSheet`'s initialiser and `_addUserStyleSheet:` / `_removeUserStyleSheet:`, so their absence is reported |
+
+| `vendor/wry/src/wkwebview/navigation.rs` | `navigation_policy_response` reads `response` through `msg_send!` and allows the load when WebKit hands it nil (a process-swapped provisional page), instead of the generated binding's panic, which aborted the app |

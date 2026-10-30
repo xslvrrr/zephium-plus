@@ -964,7 +964,17 @@ pub(crate) fn navigation_policy_response(
   unsafe {
     let can_show_mime_type = response.canShowMIMEType();
 
-    let native_response = response.response();
+    // rice fork: WebKit declares `response` nonnull but can hand a
+    // process-swapped provisional page's decision over with none; the
+    // generated binding panics there, which aborts the app inside WebKit's
+    // callback. With nothing to inspect, the load goes ahead as WebKit's
+    // default would have it.
+    let native_response: Option<objc2::rc::Retained<objc2_foundation::NSURLResponse>> =
+      objc2::msg_send![response, response];
+    let Some(native_response) = native_response else {
+      (*handler).call((WKNavigationResponsePolicy::Allow,));
+      return;
+    };
     let attachment = native_response
       .downcast_ref::<NSHTTPURLResponse>()
       .and_then(|response| {
@@ -983,7 +993,7 @@ pub(crate) fn navigation_policy_response(
     }
 
     if response.isForMainFrame() {
-      let response = response.response();
+      let response = native_response;
       let Some(_url) = response
         .URL()
         .and_then(|url| url.absoluteString())

@@ -22,7 +22,9 @@
   import { notchMode } from "$session/notch.svelte";
 
   /** rice fork: in notch mode an untouched New Tab is the empty window, not
-   *  a tab, so it has no row (Zen's way). */
+   *  a tab, so its row is not shown (Zen's way). The row stays in the
+   *  document: native checks the active tab's row before it shows Browse
+   *  again after Work. */
   const emptyTab = (tab: TabView) =>
     notchMode() && !tab.url && !tab.loading && !tab.failure && (tab.content ?? "web") === "web";
 
@@ -206,7 +208,7 @@
           onPointerUp: handlePointerUp,
           onPointerCancel: handlePointerCancel,
         })}
-      {:else if !emptyTab(unit.tab)}
+      {:else}
         <TabRow
           cascade={cascadeFrom + index}
           tab={unit.tab}
@@ -216,6 +218,7 @@
           class={[
             variant === "essentials" ? "col-span-full" : "",
             hiddenUnits.has(unit.key) ? "hidden" : "",
+            emptyTab(unit.tab) ? "rice-empty-tab" : "",
           ].join(" ")}
           splitCandidate={splitting && unit.tab.id !== tabs.activeId()}
           onSelect={select}
@@ -242,6 +245,11 @@
   />{/if}
 
 <style>
+  /* Over the row's own scoped display. */
+  .tab-list :global(.rice-empty-tab) {
+    display: none !important;
+  }
+
   .tab-list {
     padding-inline: var(--sidebar-inset);
     padding-block: 2px;
