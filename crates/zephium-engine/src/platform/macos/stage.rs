@@ -216,6 +216,8 @@ pub struct StageIvars {
     /// a newer layout has already settled.
     held_frame: Cell<Option<NSRect>>,
     motion_generation: Cell<u64>,
+    /// rice fork: the notch cut into the pages, kept to follow resizes.
+    page_notch: Cell<Option<super::page_notch::PageNotch>>,
 }
 
 define_class!(
@@ -228,6 +230,7 @@ define_class!(
     impl ContentStage {
         #[unsafe(method(resizeSubviewsWithOldSize:))]
         fn resize_subviews(&self, _old: NSSize) {
+            super::page_notch::place(self, self.ivars().page_notch.get(), false);
             self.cancel_split_drag(false);
             self.bump_layout_epoch();
             if self.position_panes() && self.ivars().paintable_changed.replace(false) {
@@ -915,6 +918,15 @@ impl ContentStage {
             }));
         }
         self.restack(raised || self.ivars().peek_raised.get());
+    }
+
+    /// rice fork: cuts the notch into the pages, or takes the cut away. A
+    /// change of whether it is down, or of its depth, moves it there.
+    pub fn set_page_notch(&self, notch: Option<super::page_notch::PageNotch>, animate: bool) {
+        let before = self.ivars().page_notch.replace(notch);
+        let moved =
+            matches!((before, notch), (Some(a), Some(b)) if a.down != b.down || a.depth != b.depth);
+        super::page_notch::place(self, notch, animate && moved);
     }
 
     /// rice fork: the chrome web view, the stage's sibling in the window.

@@ -114,6 +114,23 @@ pub fn window_controls_set_bare(window: &WebviewWindow, bare: bool) {
 
 /// rice fork: the frame's window-controls group came down or went up; the
 /// buttons slide with it. Only hover mode has a group to follow.
+/// rice fork: cuts the notch into the window's pages, or takes it away.
+pub fn page_notch(window: &WebviewWindow, notch: Option<zephium_engine::PageNotch>, animate: bool) {
+    let owner = window.clone();
+    let _ = window.run_on_main_thread(move || {
+        let Ok(pointer) = owner.ns_view() else {
+            return;
+        };
+        // SAFETY: Tao's live content view, retained on the main thread.
+        let Some(content) =
+            (unsafe { objc2::rc::Retained::retain(pointer.cast::<objc2_app_kit::NSView>()) })
+        else {
+            return;
+        };
+        zephium_engine::set_page_notch(&content, notch, animate);
+    });
+}
+
 pub fn window_group(window: &WebviewWindow, down: bool) {
     let owner = window.clone();
     let _ = window.run_on_main_thread(move || {

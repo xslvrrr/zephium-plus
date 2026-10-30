@@ -50,6 +50,7 @@ mod find;
 mod location;
 mod native;
 mod navigation;
+pub(crate) mod page_notch;
 pub(crate) mod page_save;
 pub mod private_api;
 pub(crate) mod proxy;
@@ -80,7 +81,7 @@ pub(crate) use work_observation_presentation::retained_page_hidden;
 #[cfg(feature = "agentic-browser")]
 pub(crate) use work_observation_presentation::{PresentationState, WorkObservationPresentation};
 mod pointer_cover;
-mod stage;
+pub(crate) mod stage;
 mod webext_action_icon;
 
 pub(crate) use find::{find, FindReport, FindSession};

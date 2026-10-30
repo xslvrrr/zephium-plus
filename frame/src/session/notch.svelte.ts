@@ -10,6 +10,15 @@ export const notchMode = () =>
 
 const holds = new SvelteSet<symbol>();
 let pinned = $state(false);
+let newTab = $state(false);
+
+/** A new tab asked for while a page is in front: the notch's field opens
+ *  empty, and what is typed there opens in a new tab. It ends when the
+ *  field lets go of focus. */
+export const notchNewTab = () => newTab;
+export function setNotchNewTab(value: boolean) {
+  newTab = value;
+}
 
 /** Something inside the notch needs it down: focus in the field, an open menu. */
 export function holdNotch(owner: symbol, held: boolean) {

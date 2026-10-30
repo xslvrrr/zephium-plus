@@ -18,6 +18,7 @@
   import AiProviderRow from "../AiProviderRow.svelte";
   import AiVoiceRow from "../AiVoiceRow.svelte";
   import AiZephiumRow from "../AiZephiumRow.svelte";
+  import ClaudeCodeGroup from "../ClaudeCodeGroup.svelte";
   import WorkDecisions from "../WorkDecisions.svelte";
 
   let profile = $derived(tabs.profile());
@@ -98,6 +99,8 @@
   {#if !anyUsable}<p class="ai-note">{m.ai_byok_start()}</p>{/if}
 
   <AiZephiumRow />
+  <!-- rice fork: Ask answered by Claude Code, through Zephium's MCP server. -->
+  <ClaudeCodeGroup />
 
   <SettingsGroup title={m.ai_keys_group()} description={m.ai_keys_note()}>
     {#if session}{#each keyedProviders as provider (provider)}<AiProviderRow

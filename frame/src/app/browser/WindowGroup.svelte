@@ -9,6 +9,7 @@
   import { claimRegion } from "$session/chrome-regions.svelte";
   import { setZone, zoneInside } from "$session/reach-zones.svelte";
   import { isHidden, toggleMode } from "$session/sidebar-mode.svelte";
+  import { setWindowGroupDown } from "$session/window-group.svelte";
 
   /**
    * rice fork: with `ui.window-controls=hover`, the traffic lights and the
@@ -74,10 +75,13 @@
     if (event.target === group && event.propertyName === "transform" && !down) shown = false;
   }
 
-  // Native moves the real buttons together with the slide.
+  // Native moves the real buttons together with the slide; the sidebar's
+  // head makes room for the group as it comes down.
   $effect(() => {
     void commands.windowGroup(down);
+    setWindowGroupDown(down);
   });
+  $effect(() => () => setWindowGroupDown(false));
   // Gone (fullscreen, or the preference changed), the group is put away;
   // native follows only in hover mode.
   $effect(() => () => void commands.windowGroup(false));

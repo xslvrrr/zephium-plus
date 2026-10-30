@@ -58,6 +58,9 @@ const REST_SECONDS: f64 = 0.24;
 /// titlebar is laid out (see `WindowControls::group_lift`).
 const GROUP_LIFT_FALLBACK: f64 = 40.0;
 const GROUP_SECONDS: f64 = 0.18;
+/// rice fork: the centre of the group's row, down from the window's top: the
+/// shell's 8 pt gutter and half the 32 pt titlebar row its button stands in.
+const GROUP_ROW_CENTRE: f64 = 24.0;
 
 fn group_slide() -> &'static objc2_foundation::NSString {
     ns_string!("zephium.controls.group")
@@ -310,7 +313,7 @@ impl WindowControls {
             0.0
         };
         let put_away = self.group_lift();
-        let lift = if down { 0.0 } else { put_away };
+        let lift = if down { self.row_offset() } else { put_away };
         let buttons = self.buttons();
         // Already on their way up: the slide under way hides them as it ends.
         if !down && duration > 0.0 && buttons.iter().any(|button| heading(button, lift)) {
@@ -374,15 +377,39 @@ impl WindowControls {
         })
     }
 
-    /// rice fork: puts a put-away group's model transform back after AppKit
-    /// reset it, without touching a slide under way, which the model does
-    /// not show until it ends.
+    /// rice fork: how far up the controls move to stand level with the
+    /// group's button: the centre of their row, read from where AppKit and
+    /// Tao placed them, less the button's. Their frames are never touched.
+    fn row_offset(&self) -> f64 {
+        let (Some(button), Some(window)) = (self.buttons().into_iter().next(), self.window())
+        else {
+            return 0.0;
+        };
+        let Some(content) = window.contentView() else {
+            return 0.0;
+        };
+        let frame = button.convertRect_toView(button.bounds(), None);
+        let centre = content.bounds().size.height - (frame.origin.y + frame.size.height / 2.0);
+        let offset = centre - GROUP_ROW_CENTRE;
+        if offset.is_finite() && offset.abs() < 40.0 {
+            offset
+        } else {
+            0.0
+        }
+    }
+
+    /// rice fork: puts the group's model transform back after AppKit reset
+    /// it, down level with the button or put away, without touching a
+    /// slide under way, which the model does not show until it ends.
     fn hold_lift(&self) {
-        if !self.ivars().bare.get() || self.ivars().group_down.get() || self.ivars().suspended.get()
-        {
+        if !self.ivars().bare.get() || self.ivars().suspended.get() {
             return;
         }
-        let lift = self.group_lift();
+        let lift = if self.ivars().group_down.get() {
+            self.row_offset()
+        } else {
+            self.group_lift()
+        };
         CATransaction::begin();
         CATransaction::setDisableActions(true);
         for button in self.buttons() {

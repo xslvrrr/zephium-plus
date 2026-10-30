@@ -550,6 +550,36 @@ export const commands = {
 	 *  the native buttons slide together with it.
 	 */
 	windowGroup: (down: boolean) => __TAURI_INVOKE<void>("window_group", { down }),
+	/**
+	 *  rice fork: the notch cut into the page (notch mode over a web page), or
+	 *  none; `animate` slides it there.
+	 */
+	pageNotch: (notch: {
+	left: number | null,
+	width: number | null,
+	depth: number | null,
+	radius: number | null,
+	flare: number | null,
+	down: boolean,
+} | null, animate: boolean) => __TAURI_INVOKE<void>("page_notch", { notch, animate }),
+	/**
+	 *  rice fork: whether Claude Code can answer Ask: where `claude` is, and
+	 *  whether the MCP bridge is bundled.
+	 */
+	claudeCodeStatus: () => __TAURI_INVOKE<{
+	/**  Where `claude` was found; `None` when it is not installed. */
+	path: string | null,
+	/**  Zephium's MCP bridge is bundled beside the app. */
+	bridge: boolean,
+} | null>("claude_code_status"),
+	/**
+	 *  rice fork: asks Claude Code, headless, continuing `session` when given;
+	 *  `page` names the tab in front. Its answer streams as
+	 *  `zephium:claude-code` events; this returns the run's number.
+	 */
+	claudeCodeAsk: (prompt: string, session: string | null, page: string | null) => typedError<number, string>(__TAURI_INVOKE("claude_code_ask", { prompt, session, page })),
+	/**  rice fork: stops a Claude Code run. */
+	claudeCodeCancel: (run: number) => __TAURI_INVOKE<void>("claude_code_cancel", { run }),
 	/**  rice fork: the site styles a host is given and the person's switches. */
 	siteStylesFor: (host: string) => __TAURI_INVOKE<SiteStylesView>("site_styles_for", { host }),
 	/**  rice fork: changes one of a host's site-style switches. */
@@ -1280,6 +1310,13 @@ export type CaptureDeviceStateView = "none" | "active" | "muted";
 export type ChangedNote = {
 	id: string,
 	revision: string | null,
+};
+
+export type ClaudeCodeStatus = {
+	/**  Where `claude` was found; `None` when it is not installed. */
+	path: string | null,
+	/**  Zephium's MCP bridge is bundled beside the app. */
+	bridge: boolean,
 };
 
 /**  A closed tab that can be reopened. */
@@ -2439,6 +2476,16 @@ export type PageAssistSuggestionV1 = "summarize" | "key_points" | "key_numbers" 
 "darker" |
 /**  Larger, easier-to-read text on this site. */
 "readable";
+
+/**  rice fork: where the notch cuts the page, in window top-left points. */
+export type PageNotchSpec = {
+	left: number | null,
+	width: number | null,
+	depth: number | null,
+	radius: number | null,
+	flare: number | null,
+	down: boolean,
+};
 
 /**
  *  Closed page capability names rendered by browser-owned chrome. Native

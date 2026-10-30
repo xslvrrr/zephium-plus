@@ -7,6 +7,7 @@
   import { uiCommands as ui } from "$domain/ui-commands";
   import IconButton from "$shared/ui/IconButton";
   import { tabs } from "$domain/tabs";
+  import { commands } from "$shared/ipc/bindings";
   import { reducedMotion } from "$shared/lib/motion";
   import { claimRegion } from "$session/chrome-regions.svelte";
   import { setZone } from "$session/reach-zones.svelte";
@@ -18,8 +19,8 @@
     newTab,
     address,
   }: {
-    /** The page column, in window points. */
-    content: { x: number; width: number };
+    /** The page column, in window points; `top` is the page's top edge. */
+    content: { x: number; width: number; top?: number };
     /** No web page stands beneath: the new tab, or a pane the chrome draws
      *  in the page's place. The notch then claims nothing over it. */
     newTab: boolean;
@@ -55,7 +56,6 @@
     const bottom = ROW_TOP + addressHeight;
     return bottom > NOTCH.height + 0.5 ? Math.ceil(bottom) + HANG_PAD : NOTCH.height;
   });
-  let figure = $derived(notchFigure(content.x, content.width, depth));
   let down = $derived(notchDown());
   // On screen at all: down, or still sliding up. The chrome stays raised and
   // the controls stay live until the slide has finished.
@@ -71,6 +71,28 @@
   let overPage = $derived(
     !newTab && surface.currentPage() === null && Boolean(tabs.activeTab()?.url),
   );
+  // Over a web page the notch is cut into it: the page's edge turns down
+  // round the notch, whose ground is the window's own. Native cuts the page
+  // (`page_notch`); here only the edge is drawn, its flares on the page's
+  // top edge.
+  let figure = $derived(
+    notchFigure(content.x, content.width, depth, overPage ? (content.top ?? 0) : 0),
+  );
+  $effect(() => {
+    const cut =
+      figure && overPage
+        ? {
+            left: figure.x + NOTCH.flare,
+            width: figure.width - 2 * NOTCH.flare,
+            depth: figure.height,
+            radius: NOTCH.radius,
+            flare: NOTCH.flare,
+            down,
+          }
+        : null;
+    void commands.pageNotch(cut, !untrack(reducedMotion));
+  });
+  $effect(() => () => void commands.pageNotch(null, false));
 
   $effect(() => {
     if (down) {
@@ -206,6 +228,7 @@
     data-rice-notch
     data-chrome-region
     data-down={down || undefined}
+    data-cut={overPage || undefined}
     aria-hidden={!shown || undefined}
     inert={!shown}
     style:left={`${figure.x}px`}
@@ -295,6 +318,11 @@
 
   .notch-fill {
     fill: var(--notch-fill);
+  }
+
+  /* Cut into the page, the notch stands on the window's ground. */
+  [data-rice-notch][data-cut] .notch-fill {
+    fill: none;
   }
 
   /* The hidden sidebar's hairline, so it reads against a page as light as

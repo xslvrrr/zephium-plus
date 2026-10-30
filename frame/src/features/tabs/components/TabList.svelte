@@ -19,6 +19,12 @@
   import { RowDrag } from "$session/row-drag.svelte";
   import { favicons } from "$domain/favicons";
   import DragMark from "$shared/ui/DragMark";
+  import { notchMode } from "$session/notch.svelte";
+
+  /** rice fork: in notch mode an untouched New Tab is the empty window, not
+   *  a tab, so it has no row (Zen's way). */
+  const emptyTab = (tab: TabView) =>
+    notchMode() && !tab.url && !tab.loading && !tab.failure && (tab.content ?? "web") === "web";
 
   let {
     entries,
@@ -209,7 +215,7 @@
           closable={section === "today" && !tabs.loneNewTab(unit.tab.id)}
           class={[
             variant === "essentials" ? "col-span-full" : "",
-            hiddenUnits.has(unit.key) ? "hidden" : "",
+            hiddenUnits.has(unit.key) || emptyTab(unit.tab) ? "hidden" : "",
           ].join(" ")}
           splitCandidate={splitting && unit.tab.id !== tabs.activeId()}
           onSelect={select}

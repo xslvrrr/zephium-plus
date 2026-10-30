@@ -27,22 +27,29 @@ export type Figure = {
  *  foot on the top edge, the ground turning down into the side on the flare's
  *  radius, straight down, round the bottom corners, and back up the other
  *  side to the right foot. */
-export function notchFigure(x: number, width: number, depth: number = NOTCH.height): Figure | null {
+export function notchFigure(
+  x: number,
+  width: number,
+  depth: number = NOTCH.height,
+  top = 0,
+): Figure | null {
   const span = Math.max(0, Math.min(NOTCH.width, width - 2 * INSET));
   const { radius: r, flare: f } = NOTCH;
   const height = n(Math.max(NOTCH.height, depth));
   if (span < 2 * r) return null;
   const left = f;
   const right = f + span;
+  // rice fork: cut into a page, the flares meet the page's top edge, `top`
+  // down from the window's.
   const edge = [
-    `M0 0`,
-    `A${f} ${f} 0 0 1 ${left} ${f}`,
+    `M0 ${n(top)}`,
+    `A${f} ${f} 0 0 1 ${left} ${n(top + f)}`,
     `V${n(height - r)}`,
     `A${r} ${r} 0 0 0 ${n(left + r)} ${height}`,
     `H${n(right - r)}`,
     `A${r} ${r} 0 0 0 ${n(right)} ${n(height - r)}`,
-    `V${f}`,
-    `A${f} ${f} 0 0 1 ${n(right + f)} 0`,
+    `V${n(top + f)}`,
+    `A${f} ${f} 0 0 1 ${n(right + f)} ${n(top)}`,
   ].join("");
   return {
     x: n(x + (width - span) / 2 - f),

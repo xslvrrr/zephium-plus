@@ -79,6 +79,7 @@ const defaults = {
   "site-styles.enabled": "false",
   "site-styles.force": "false",
   "site-styles.auto-update": "true",
+  "ai.claude-code": "false",
 } as const;
 export type PreferenceKey = keyof typeof defaults;
 const values = $state<Record<PreferenceKey, string>>({ ...defaults });

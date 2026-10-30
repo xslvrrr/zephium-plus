@@ -311,6 +311,13 @@ impl Shell {
         if self.windows.focused().is_none() {
             return operation_result(OperationOutcome::Rejected, OperationReason::NoFocusedWindow);
         }
+        // rice fork: in notch mode there is no New Tab page to open. The
+        // notch slides in with an empty field, and what is typed there opens
+        // in a new tab (Zen's way); the empty window is the new tab.
+        if self.chrome_spans && self.active_browser_page().is_none() {
+            (self.emit)(Projection::UiCommand("notch.new-tab".into()));
+            return operation_result(OperationOutcome::Applied, OperationReason::MutationApplied);
+        }
         let Some((_id, effects)) = self.open_tab_with_id() else {
             return operation_result(
                 OperationOutcome::Rejected,

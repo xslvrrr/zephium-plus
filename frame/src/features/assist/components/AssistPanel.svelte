@@ -19,6 +19,8 @@
     PencilEdit02Icon,
     Settings02Icon,
   } from "../lib/icons";
+  import { preferences } from "$domain/preferences";
+  import ClaudeCodeChat from "./ClaudeCodeChat.svelte";
   import Composer from "./Composer.svelte";
   import HistoryView from "./HistoryView.svelte";
   import SiteStyles from "./SiteStyles.svelte";
@@ -66,6 +68,9 @@
   });
 
   let composer = $state<ReturnType<typeof Composer>>();
+  // rice fork: with Claude Code chosen in Settings → AI, it answers here.
+  const claudeCode = $derived(preferences.value("ai.claude-code") === "true");
+  let claude = $state<ReturnType<typeof ClaudeCodeChat>>();
   onMount(() => {
     let stop: (() => void) | null = null;
     let live = true;
@@ -75,6 +80,7 @@
         if (payload !== "tool.ai") return;
         view = "thread";
         composer?.focus();
+        claude?.focus();
       })
       .then((off) => {
         if (live) stop = off;
@@ -175,7 +181,8 @@
         {#snippet trigger()}<Icon icon={MoreHorizontalIcon} size={16} />{/snippet}
       </Menu>
     {/snippet}
-    {#if session}
+    {#if claudeCode}<ClaudeCodeChat {space} bind:this={claude} />
+    {:else if session}
       {#if view === "history"}<HistoryView {session} onback={() => (view = "thread")} />
       {:else if view === "styles"}<SiteStyles {session} onback={() => (view = "thread")} />
       {:else}<Thread
@@ -185,7 +192,7 @@
         />{/if}
     {/if}
     {#snippet footer()}
-      {#if session}<Composer
+      {#if session && !claudeCode}<Composer
           {session}
           draft={viewProps.state.draft}
           ondraft={(draft) => viewProps.edit({ draft })}

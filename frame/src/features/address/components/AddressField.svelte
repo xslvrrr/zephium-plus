@@ -19,6 +19,7 @@
   import IconButton from "$shared/ui/IconButton";
   import CaptureControl from "$shared/ui/CaptureControl";
   import { preferences } from "$domain/preferences";
+  import { notchNewTab, setNotchNewTab } from "$session/notch.svelte";
   import * as find from "../lib/find.svelte";
   import { flushSync, untrack, type Snippet } from "svelte";
   import { duration, easing, reducedMotion } from "$shared/lib/motion";
@@ -148,14 +149,16 @@
     if (composing || pending || !value.trim()) return;
     const id = tabs.activeId();
     const profile = tabs.profile()?.id;
-    const opensNewTab = activeContent !== "web";
+    // rice fork: the notch's field opened for a new tab opens one.
+    const intent = notchNewTab();
+    const opensNewTab = intent || activeContent !== "web";
     const submitted = value;
     pending = true;
     failed = false;
     try {
       const result = await settle(
-        id === null
-          ? commands.browserOpenUrl(submitted, false)
+        id === null || intent
+          ? commands.browserOpenUrl(submitted, intent)
           : commands.tabsNavigate(id, submitted),
       );
       if (tabs.profile()?.id !== profile) return;
@@ -184,7 +187,7 @@
     // Keep the resting chrome quiet while preserving the complete location
     // when the user explicitly enters edit mode.
     const from = textStart();
-    draft = editingAddress(activeUrl) || value;
+    draft = notchNewTab() ? "" : editingAddress(activeUrl) || value;
     editing = true;
     flushSync();
     input.select();
@@ -192,6 +195,7 @@
   }
 
   function endEditing() {
+    setNotchNewTab(false);
     const from = textStart();
     editing = false;
     flushSync();

@@ -12,6 +12,7 @@
   import { openSidebarMenu, runMenuExtension } from "../lib/sidebar-menu";
   import SidebarSearch from "./SidebarSearch.svelte";
   import WindowControls from "$shared/ui/WindowControls";
+  import { windowGroupDown } from "$session/window-group.svelte";
 
   let {
     compact,
@@ -35,6 +36,12 @@
   // rice fork: with the window controls on hover, the window-controls group
   // draws the shape toggle in this place and slides it in with the lights.
   let grouped = $derived(lights && preferences.value("ui.window-controls") === "hover");
+  // rice fork: grouped, a head with nothing of its own keeps no room for the
+  // lights while they are away: the column starts at the top, and the head
+  // opens (sliding the column down) as the group comes down into it.
+  let folded = $derived(
+    grouped && !launcher && !(pageControls && navControls) && !windowGroupDown(),
+  );
 
   // At rail width the extensions' buttons live in this menu; a popup chosen
   // there hangs from the button that opened it.
@@ -71,7 +78,11 @@
   -->
   <header class="flex shrink-0 flex-col items-center gap-[3px]" aria-label={m.ui_navigation()}>
     {#if lights}
-      <div style:height="var(--titlebar-height)" aria-hidden="true"></div>
+      <div
+        class:rice-fold={grouped}
+        style:height={grouped && !windowGroupDown() ? "8px" : "var(--titlebar-height)"}
+        aria-hidden="true"
+      ></div>
     {:else if IS_MAC}
       <div style:height="8px" aria-hidden="true"></div>
     {/if}
@@ -93,7 +104,8 @@
 {:else}
   <header
     class="flex shrink-0 items-center gap-px pe-1.5"
-    style:height="var(--titlebar-height)"
+    class:rice-fold={grouped}
+    style:height={folded ? "0px" : "var(--titlebar-height)"}
     style:padding-inline-start={lights
       ? "var(--traffic-light-inset)"
       : launcher && IS_WINDOWS
@@ -120,3 +132,22 @@
     {/if}
   </header>
 {/if}
+
+<style>
+  /* rice fork: the head opens and closes with the window-controls group, on
+     the group's own curve. */
+  .rice-fold {
+    overflow: hidden;
+    transition: height 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  :global(:root[data-reduce-motion="true"]) .rice-fold {
+    transition: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .rice-fold {
+      transition: none;
+    }
+  }
+</style>

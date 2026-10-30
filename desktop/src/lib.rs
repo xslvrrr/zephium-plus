@@ -115,6 +115,7 @@ mod private_window;
 mod privileged_runtime_windows;
 mod profiles;
 // rice fork: named pointer zones, watched natively on macOS only so far.
+mod claude_code;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod reach_zones;
 mod recently_closed;
@@ -1841,6 +1842,10 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             chrome_regions,
             reach_zones,
             window_group,
+            page_notch,
+            claude_code_status,
+            claude_code_ask,
+            claude_code_cancel,
             site_styles_for,
             site_styles_set,
             site_styles_status,
@@ -5493,6 +5498,91 @@ fn window_group(caller: WebviewWindow, down: bool) {
     platform::imp::window_group(&caller, down);
     #[cfg(not(target_os = "macos"))]
     let _ = down;
+}
+
+/// rice fork: where the notch cuts the page, in window top-left points.
+#[derive(Clone, Copy, Debug, serde::Deserialize, specta::Type)]
+pub struct PageNotchSpec {
+    pub left: f64,
+    pub width: f64,
+    pub depth: f64,
+    pub radius: f64,
+    pub flare: f64,
+    pub down: bool,
+}
+
+/// rice fork: the notch cut into the page (notch mode over a web page), or
+/// none; `animate` slides it there.
+#[tauri::command]
+#[specta::specta]
+fn page_notch(caller: WebviewWindow, notch: Option<PageNotchSpec>, animate: bool) {
+    if !authorize(&caller, CallerPolicy::Main, "page_notch") {
+        return;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let notch = notch
+            .filter(|n| {
+                [n.left, n.width, n.depth, n.radius, n.flare]
+                    .iter()
+                    .all(|v| v.is_finite() && v.abs() < 100_000.0)
+            })
+            .map(|n| zephium_engine::PageNotch {
+                left: n.left,
+                width: n.width.max(0.0),
+                depth: n.depth.clamp(0.0, 400.0),
+                radius: n.radius.clamp(0.0, 64.0),
+                flare: n.flare.clamp(0.0, 64.0),
+                down: n.down,
+            });
+        platform::imp::page_notch(&caller, notch, animate);
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (notch, animate);
+}
+
+/// rice fork: whether Claude Code can answer Ask: where `claude` is, and
+/// whether the MCP bridge is bundled.
+#[tauri::command]
+#[specta::specta]
+fn claude_code_status(caller: WebviewWindow) -> Option<claude_code::ClaudeCodeStatus> {
+    if !authorize(&caller, CallerPolicy::Main, "claude_code_status") {
+        return None;
+    }
+    Some(claude_code::status())
+}
+
+/// rice fork: asks Claude Code, headless, continuing `session` when given;
+/// `page` names the tab in front. Its answer streams as
+/// `zephium:claude-code` events; this returns the run's number.
+#[tauri::command]
+#[specta::specta]
+fn claude_code_ask(
+    caller: WebviewWindow,
+    prompt: String,
+    session: Option<String>,
+    page: Option<String>,
+) -> Result<u32, String> {
+    if !authorize(&caller, CallerPolicy::Main, "claude_code_ask") {
+        return Err("Not allowed.".to_owned());
+    }
+    claude_code::ask(
+        caller.app_handle(),
+        caller.label().to_owned(),
+        prompt,
+        session,
+        page,
+    )
+}
+
+/// rice fork: stops a Claude Code run.
+#[tauri::command]
+#[specta::specta]
+fn claude_code_cancel(caller: WebviewWindow, run: u32) {
+    if !authorize(&caller, CallerPolicy::Main, "claude_code_cancel") {
+        return;
+    }
+    claude_code::cancel(run);
 }
 
 /// rice fork: the site styles a host is given and the person's switches.

@@ -79,6 +79,7 @@ pub const KEYS: &[&str] = &[
     "site-styles.enabled",
     "site-styles.force",
     "site-styles.auto-update",
+    "ai.claude-code",
 ];
 
 /// SmartScreen ships on. Only an explicit persisted false disables the
@@ -236,7 +237,8 @@ pub fn value_allowed(key: &str, value: &str) -> bool {
         "ui.page-transparency"
         | "site-styles.enabled"
         | "site-styles.force"
-        | "site-styles.auto-update" => matches!(value, "true" | "false"),
+        | "site-styles.auto-update"
+        | "ai.claude-code" => matches!(value, "true" | "false"),
         "ui.radius" => value
             .parse::<u8>()
             .is_ok_and(|radius| radius <= 16 && value == radius.to_string()),

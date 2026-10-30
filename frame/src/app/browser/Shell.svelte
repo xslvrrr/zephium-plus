@@ -76,7 +76,7 @@
   import { tabs } from "$domain/tabs";
   import { preferences } from "$domain/preferences";
   import { Notch } from "$features/notch";
-  import { holdNotch, notchMode, pinNotch } from "$session/notch.svelte";
+  import { holdNotch, notchMode, pinNotch, setNotchNewTab } from "$session/notch.svelte";
   /** New Note, from the menu or its shortcut: a note starts where notes are open. */
   async function newNote() {
     const profile = tabs.profile()?.id;
@@ -259,6 +259,7 @@
       if (command.id === "tab.clearSiteData") clearRequest.ask(tabs.takeMenuTargetUrl());
       if (command.id === "page.clearSiteData") clearRequest.ask(tabs.activeTab()?.url);
       if (command.id === "url.focus" && notched) void focusInNotch(addressCommand, NOTCH_ADDRESS);
+      if (command.id === "notch.new-tab" && notched) openNewTabInNotch();
       if (command.id === "find.show") findInPage.show(tabs.activeId());
       if (command.id === "find.next") findInPage.step(true, tabs.activeId());
       if (command.id === "find.previous") findInPage.step(false, tabs.activeId());
@@ -299,9 +300,10 @@
       else if (!tab || tab.url || tab.id !== newTabLoad) newTabLoad = null;
     });
   });
-  // rice fork: the notch is down on the new tab and Zephium's own pages; over
-  // a web page only the pointer or something held in it brings it down.
-  $effect(() => pinNotch(notched && (newTabShown || browserPage.currentPage() !== null)));
+  // rice fork: the notch is down on Zephium's own pages; over a web page and
+  // over the empty window (Zen's new tab) only the pointer, a new tab or
+  // something held in it brings it down.
+  $effect(() => pinNotch(notched && browserPage.currentPage() !== null));
   // rice fork: the panes the chrome draws in the page's place, where the
   // notch must leave the pointer to them as it does on the new tab.
   let chromePane = $derived.by(() => {
@@ -322,14 +324,14 @@
   const COLUMN_AWAY =
     ".shell:has(> .browser-sidebar:is([data-hidden], [data-leaving])) .stage-column";
   let stageColumn = $state<HTMLElement>();
-  let pageColumn = $state({ x: 0, width: 0 });
+  let pageColumn = $state({ x: 0, width: 0, top: 0 });
   $effect(() => {
     const column = stageColumn;
     if (!column || !notched) return;
     const measure = () => {
       const rect = column.getBoundingClientRect();
       const gap = column.matches(COLUMN_AWAY) ? 0 : PAGE_GAP;
-      pageColumn = { x: rect.x + gap, width: Math.max(0, rect.width - gap) };
+      pageColumn = { x: rect.x + gap, width: Math.max(0, rect.width - gap), top: rect.y };
     };
     // Measured at once, so the notch and its field (native's presentation
     // barrier reads the address through it) are there from the first frame.
@@ -357,18 +359,15 @@
     }
     holdNotch(owner, false);
   }
-  // rice fork: the new tab's own search takes focus as it mounts, once for
-  // each tab it shows (upstream NewTabSearch, keyed on the tab); in notch mode
-  // the notch's field is that search, so it takes the typing instead.
-  let newTabFocused: string | null = null;
-  $effect(() => {
-    const id = notched && newTabShown && !chromePane ? tabs.activeId() : null;
-    untrack(() => {
-      if (id === newTabFocused) return;
-      newTabFocused = id;
-      if (id !== null) void focusInNotch(newTabFocus, NOTCH_ADDRESS);
-    });
-  });
+  // rice fork: a new tab in notch mode (⌘T, the sidebar's button) is the
+  // notch's field, opened empty. Over the empty window it loads there; over
+  // a page, what is typed opens in a new tab.
+  function openNewTabInNotch() {
+    const field = document.querySelector<HTMLInputElement>(NOTCH_ADDRESS);
+    if (field && document.activeElement === field) field.blur();
+    setNotchNewTab(!newTabShown);
+    void focusInNotch(newTabFocus, NOTCH_ADDRESS);
+  }
   // rice fork: find borrows the address field, so in notch mode it holds the
   // notch down while it is open, and its asks for focus reach the notch's
   // field once the notch is down.

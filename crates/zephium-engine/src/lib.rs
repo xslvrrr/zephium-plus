@@ -197,6 +197,20 @@ pub fn page_radius() -> f64 {
     f64::from_bits(PAGE_RADIUS.load(std::sync::atomic::Ordering::Relaxed))
 }
 
+#[cfg(target_os = "macos")]
+pub use platform::macos::page_notch::PageNotch;
+
+/// rice fork: cuts the notch into the pages of the window whose content view
+/// this is (in notch mode), or takes the cut away. Main thread only.
+#[cfg(target_os = "macos")]
+pub fn set_page_notch(content: &objc2_app_kit::NSView, notch: Option<PageNotch>, animate: bool) {
+    for view in content.subviews().iter() {
+        if let Some(stage) = view.downcast_ref::<platform::macos::stage::ContentStage>() {
+            stage.set_page_notch(notch, animate);
+        }
+    }
+}
+
 /// rice fork: a host's site style: its CSS, and whether it clears the page's
 /// background.
 pub type SiteStyleResolver = Box<dyn Fn(&str) -> Option<(String, bool)> + Send + Sync>;
