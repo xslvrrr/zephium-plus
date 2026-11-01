@@ -251,6 +251,7 @@ const EVENT_EXTENSION_ACTION_FAILED: &str = "zephium:extension-action-failed";
 const EVENT_WEB_EXTENSION_ACCESS: &str = "zephium:web-extension-access";
 const EVENT_WEB_EXTENSION_DROPPED: &str = "zephium:web-extension-dropped";
 const EVENT_EXTENSION_ACTION_SHORTCUT: &str = "zephium:extension-action-shortcut";
+const EVENT_WEB_EXTENSION_STORE_CLICK: &str = "zephium:web-extension-store-click";
 const EVENT_PAGE_PERMISSION_PROMPT: &str = "zephium:page-permission-prompt";
 const EVENT_PRESENTATION_TAB: &str = "zephium:presentation-tab";
 const EVENT_UI: &str = "zephium:ui-command";
@@ -269,8 +270,11 @@ const PRE_SHELL_CLEANUP_TIMEOUT: std::time::Duration = std::time::Duration::from
 
 const PRIVILEGED_PERMISSIONS_POLICY: &str = "accelerometer=(), attribution-reporting=(), autoplay=(), browsing-topics=(), camera=(), clipboard-read=(), clipboard-write=(self), compute-pressure=(), display-capture=(), document-domain=(), encrypted-media=(), fullscreen=(), gamepad=(), geolocation=(), gyroscope=(), hid=(), idle-detection=(), join-ad-interest-group=(), local-fonts=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), private-state-token-issuance=(), private-state-token-redemption=(), publickey-credentials-get=(), run-ad-auction=(), screen-wake-lock=(), serial=(), speaker-selection=(), storage-access=(), sync-xhr=(), unload=(), usb=(), web-share=(), window-management=(), xr-spatial-tracking=()";
 const PRIVILEGED_BOOTSTRAP_URL: &str = "about:blank";
+// The chrome and launcher load their own pages, so a warm spare renderer
+// waiting for another site would mostly sit in memory.
 #[cfg(any(target_os = "windows", test))]
-const PRIVILEGED_WEBVIEW2_BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI";
+const PRIVILEGED_WEBVIEW2_BROWSER_ARGS: &str =
+    "--disable-features=msWebOOUI,msPdfOOUI,SpareRendererForSitePerProcess";
 
 #[derive(Clone)]
 struct ShutdownCoordinator {
@@ -1446,6 +1450,9 @@ struct ExtensionActionShortcut(zephium_ipc::ExtensionActionShortcutView);
 struct WebExtensionAccessRequested(zephium_ipc::WebExtensionAccessRequestView);
 
 #[derive(Clone, Debug, Serialize, Deserialize, specta::Type, Event)]
+struct WebExtensionStoreClicked(zephium_ipc::WebExtensionStoreClickView);
+
+#[derive(Clone, Debug, Serialize, Deserialize, specta::Type, Event)]
 struct PagePermissionPromptChanged(zephium_ipc::PagePermissionPromptView);
 
 #[derive(Clone, Debug, Serialize, Deserialize, specta::Type, Event)]
@@ -1759,11 +1766,14 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             tabs_leave_split,
             chrome_menu_popup,
             extension_action_invoke,
+            extension_action_menu,
             webext::web_extension_prepare,
+            webext::web_extension_store_button,
             webext::web_extension_confirm,
             webext::web_extension_cancel,
             webext::web_extension_list,
             webext::web_extension_set_enabled,
+            webext::web_extension_set_pinned,
             webext::web_extension_retry,
             webext::web_extension_uninstall,
             webext::web_extension_answer_access,
@@ -1772,7 +1782,6 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             webext::web_extension_choose_file,
             webext::web_extension_prepare_file,
             webext::web_extension_review_update,
-            webext::web_extension_catalog_icon,
             webext::web_extension_prepare_ublock,
             browser_credentials::browser_credential_capability,
             browser_credentials::browser_passkey_authorization_request,
@@ -1922,6 +1931,7 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             ExtensionActionFailed,
             ExtensionActionShortcut,
             WebExtensionAccessRequested,
+            WebExtensionStoreClicked,
             browser_credentials::BrowserCredentialCapabilityChanged,
             PagePermissionPromptChanged,
             UiCommand,
@@ -3253,35 +3263,89 @@ fn extension_action_invoke(
     anchor_width: f64,
     anchor_height: f64,
 ) -> zephium_ipc::OperationAdmission {
-    if !authorize(&caller, CallerPolicy::Main, "extension_action_invoke")
+    extension_action(
+        &caller,
+        &shell,
+        "extension_action_invoke",
+        [
+            &profile_id,
+            &install_id,
+            &runtime_generation,
+            &action_revision,
+        ],
+        [anchor_x, anchor_y, anchor_width, anchor_height],
+        false,
+    )
+}
+
+/// The context menu of an extension's toolbar button, under the button.
+#[tauri::command]
+#[specta::specta]
+#[allow(clippy::too_many_arguments)]
+fn extension_action_menu(
+    caller: WebviewWindow,
+    shell: State<'_, Handle>,
+    profile_id: String,
+    install_id: String,
+    runtime_generation: String,
+    action_revision: String,
+    anchor_x: f64,
+    anchor_y: f64,
+    anchor_width: f64,
+    anchor_height: f64,
+) -> zephium_ipc::OperationAdmission {
+    extension_action(
+        &caller,
+        &shell,
+        "extension_action_menu",
+        [
+            &profile_id,
+            &install_id,
+            &runtime_generation,
+            &action_revision,
+        ],
+        [anchor_x, anchor_y, anchor_width, anchor_height],
+        true,
+    )
+}
+
+fn extension_action(
+    caller: &WebviewWindow,
+    shell: &Handle,
+    command: &'static str,
+    [profile_id, install_id, runtime_generation, action_revision]: [&str; 4],
+    [anchor_x, anchor_y, anchor_width, anchor_height]: [f64; 4],
+    menu: bool,
+) -> zephium_ipc::OperationAdmission {
+    if !authorize(caller, CallerPolicy::Main, command)
         || shutdown_started(caller.app_handle())
-        || !bounded(&profile_id, MAX_ITEM_ID_BYTES)
-        || !bounded(&install_id, MAX_ITEM_ID_BYTES)
+        || !bounded(profile_id, MAX_ITEM_ID_BYTES)
+        || !bounded(install_id, MAX_ITEM_ID_BYTES)
     {
         return rejected_extension_action("caller-or-identity-boundary");
     }
     let Some(profile) =
-        ProfileId::parse(&profile_id).filter(|profile| profile.to_string() == profile_id)
+        ProfileId::parse(profile_id).filter(|profile| profile.to_string() == profile_id)
     else {
         return rejected_extension_action("profile-identity");
     };
     let Some(install) =
-        ExtensionInstallId::parse(&install_id).filter(|install| install.to_string() == install_id)
+        ExtensionInstallId::parse(install_id).filter(|install| install.to_string() == install_id)
     else {
         return rejected_extension_action("install-identity");
     };
     let Some(generation) =
-        fixed_nonzero_hex(&runtime_generation).and_then(ExtensionRuntimeGeneration::new)
+        fixed_nonzero_hex(runtime_generation).and_then(ExtensionRuntimeGeneration::new)
     else {
         return rejected_extension_action("runtime-generation");
     };
-    let Some(revision) = fixed_nonzero_hex(&action_revision).and_then(ExtensionActionRevision::new)
+    let Some(revision) = fixed_nonzero_hex(action_revision).and_then(ExtensionActionRevision::new)
     else {
         return rejected_extension_action("action-revision");
     };
     // On macOS the chrome webview shrinks to the sidebar beside a web page, so
     // its own size is not the window's; the anchor must fit the window.
-    let window = platform::imp::content_size(&caller).unwrap_or_else(|| inner_logical(&caller));
+    let window = platform::imp::content_size(caller).unwrap_or_else(|| inner_logical(caller));
     // DOMRect is relative to the positioned privileged chrome WebView, while
     // the native popup parent is the window content view. Apply the same
     // generation-checked chrome origin used by drag/menu coordinates; never
@@ -3304,11 +3368,12 @@ fn extension_action_invoke(
     };
     let admission = dispatch_operation(
         caller.app_handle(),
-        &shell,
+        shell,
         Command::InvokeExtensionAction {
             runtime: ExtensionRuntimeInstance::new(profile, install, generation),
             revision,
             anchor,
+            menu,
         },
     );
     if !admission.accepted {
@@ -6852,8 +6917,8 @@ pub fn run() {
                 .background_color(tauri::utils::config::Color(0, 0, 0, 0))
                 .data_directory(privileged_runtime.main.clone())
                 // Supplying any explicit value replaces Wry's default, which
-                // also disables msSmartScreenProtection. Keep only the two
-                // browser-UI suppressions for privileged chrome.
+                // also disables msSmartScreenProtection. Keep only the
+                // feature suppressions privileged chrome needs.
                 .additional_browser_args(PRIVILEGED_WEBVIEW2_BROWSER_ARGS);
             #[cfg(not(all(unix, not(target_os = "macos"))))]
             let main_builder = main_builder.on_download(|_, _| false);
@@ -7194,11 +7259,20 @@ pub fn run() {
                     EVENT_EXTENSION_ACTION_FAILED,
                     &failure,
                 ),
+                Projection::WebExtensionAccessRemoved(removal) => {
+                    webext::access_removed(&emit_handle, removal)
+                }
                 Projection::WebExtensionAccessRequest(request) => emit_to_privileged(
                     &emit_handle,
                     MAIN_LABEL,
                     EVENT_WEB_EXTENSION_ACCESS,
                     &request,
+                ),
+                Projection::WebExtensionStoreClick(click) => emit_to_privileged(
+                    &emit_handle,
+                    MAIN_LABEL,
+                    EVENT_WEB_EXTENSION_STORE_CLICK,
+                    &click,
                 ),
                 Projection::ExtensionActionShortcut(shortcut) => emit_to_privileged(
                     &emit_handle,
@@ -7554,6 +7628,8 @@ pub fn run() {
                             .is_minimized()
                             .unwrap_or(size.width == 0 || size.height == 0);
                         resize_shell.dispatch(Command::SetWindowVisible(!minimized));
+                        #[cfg(target_os = "windows")]
+                        platform::imp::set_chrome_minimized(&resize_window, minimized);
                         if minimized {
                             return;
                         }
@@ -7580,6 +7656,8 @@ pub fn run() {
                     {
                         let minimized = resize_window.is_minimized().unwrap_or(false);
                         resize_shell.dispatch(Command::SetWindowVisible(!minimized));
+                        #[cfg(target_os = "windows")]
+                        platform::imp::set_chrome_minimized(&resize_window, minimized);
                         if !minimized {
                             // Re-read logical content size at the new scale.
                             // The layout refresh also rebuilds Windows
@@ -7655,6 +7733,8 @@ pub fn run() {
                         // resize notification. Wake content before it can be
                         // interacted with.
                         resize_shell.dispatch(Command::SetWindowVisible(true));
+                        #[cfg(target_os = "windows")]
+                        platform::imp::set_chrome_minimized(&resize_window, false);
                         presence::report_app_active(resize_window.app_handle());
                     }
                     // Losing focus alone does not make a browser tab
@@ -7665,6 +7745,8 @@ pub fn run() {
                         voice::window_blurred(resize_window.app_handle());
                         if resize_window.is_minimized().unwrap_or(false) {
                             resize_shell.dispatch(Command::SetWindowVisible(false));
+                            #[cfg(target_os = "windows")]
+                            platform::imp::set_chrome_minimized(&resize_window, true);
                         }
                         presence::report_app_active(resize_window.app_handle());
                     }
@@ -9458,7 +9540,7 @@ mod tests {
     fn privileged_webview2_args_keep_smartscreen_and_process_sandboxes_enabled() {
         assert_eq!(
             super::PRIVILEGED_WEBVIEW2_BROWSER_ARGS,
-            "--disable-features=msWebOOUI,msPdfOOUI"
+            "--disable-features=msWebOOUI,msPdfOOUI,SpareRendererForSitePerProcess"
         );
         let args = super::PRIVILEGED_WEBVIEW2_BROWSER_ARGS.to_ascii_lowercase();
         assert!(!args.contains("smartscreen"));

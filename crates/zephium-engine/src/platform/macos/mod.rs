@@ -82,6 +82,7 @@ pub(crate) use work_observation_presentation::retained_page_hidden;
 pub(crate) use work_observation_presentation::{PresentationState, WorkObservationPresentation};
 mod pointer_cover;
 pub(crate) mod stage;
+pub(crate) mod store_button;
 mod webext_action_icon;
 
 pub(crate) use find::{find, FindReport, FindSession};

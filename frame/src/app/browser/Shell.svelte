@@ -25,7 +25,7 @@
   import { mediaPlayer } from "$domain/media-player";
   import { UpdateNotice } from "$features/updates";
   import { EssentialsRail } from "$features/essentials";
-  import { ExtensionActions, ExtensionsSection } from "$features/extensions";
+  import { ExtensionsSection, NotchExtensions, PinnedExtensions } from "$features/extensions";
   import { webext } from "$domain/webext";
   import { loadWebExtensionManager, StoreInstallRail } from "$features/webext";
   import { sidebarTree } from "$features/tabs";
@@ -507,7 +507,9 @@
             {#if splitting}<p class="shrink-0 px-3 pb-1 text-[12px] text-accent" aria-live="polite">
                 {m.choose_split()}
               </p>{/if}
-            <SidebarBody pinned={tree.pinned} today={tree.today} {splitting} onSelect={selectTab} />
+            <SidebarBody pinned={tree.pinned} today={tree.today} {splitting} onSelect={selectTab}>
+              {#snippet extras()}<PinnedExtensions />{/snippet}
+            </SidebarBody>
             <!-- Brief notices and downloads sit at the foot of the column, by the dock. -->
             <McpIndicator />
             <SidebarNotice />
@@ -603,8 +605,7 @@
     {#if notched}<Notch content={pageColumn} newTab={newTabShown || chromePane}
         >{#snippet address()}{@render addressBlock(
             false,
-          )}{/snippet}{#snippet tools()}{#if webext.isAvailable()}<ExtensionActions
-              variant="bar"
+          )}{/snippet}{#snippet tools()}{#if webext.isAvailable()}<NotchExtensions
             />{/if}{/snippet}</Notch
       >{/if}
     {#if browserPage.navigationFailed()}<div class="navigation-error" role="alert">

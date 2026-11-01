@@ -54,7 +54,7 @@
     },
     "lazy:features/history/components/HistoryPage.svelte": {
       "js": 139629,
-      "css": 10203
+      "css": 10342
     },
     "lazy:features/history/components/HistoryPanel.svelte": {
       "js": 16168,
@@ -90,7 +90,7 @@
     },
     "lazy:features/notes/components/NotesPage.svelte": {
       "js": 157037,
-      "css": 20535
+      "css": 20674
     },
     "lazy:features/notes/index.ts": {
       "js": 388,
@@ -105,8 +105,8 @@
       "css": 10642
     },
     "lazy:features/search/components/NewTabSearch.svelte": {
-      "js": 99899,
-      "css": 8758
+      "js": 101686,
+      "css": 8897
     },
     "lazy:features/settings/components/account/AccountAvatarCrop.svelte": {
       "js": 9486,
@@ -174,7 +174,7 @@
     },
     "lazy:features/settings/components/sections/MemoryPage.svelte": {
       "js": 15999,
-      "css": 3957
+      "css": 4096
     },
     "lazy:features/settings/components/sections/PerformancePage.svelte": {
       "js": 6729,
@@ -182,7 +182,7 @@
     },
     "lazy:features/settings/components/sections/PrivacyPage.svelte": {
       "js": 48465,
-      "css": 6617
+      "css": 6756
     },
     "lazy:features/settings/components/sections/ProfilesPage.svelte": {
       "js": 25779,
@@ -233,7 +233,7 @@
       "css": 5623
     },
     "lazy:features/tabs/components/SpaceSwitcher.svelte": {
-      "js": 5217,
+      "js": 5218,
       "css": 4029
     },
     "lazy:features/tabs/components/TabCapacityState.svelte": {
@@ -253,8 +253,8 @@
       "css": 26849
     },
     "lazy:features/tasks/components/TasksPage.svelte": {
-      "js": 314255,
-      "css": 36889
+      "js": 314257,
+      "css": 37028
     },
     "lazy:features/tasks/lib/capture.ts": {
       "js": 33949,
@@ -313,8 +313,8 @@
       "css": 1816
     },
     "lazy:features/webext/components/WebExtensionManager.svelte": {
-      "js": 129154,
-      "css": 13049
+      "js": 212394,
+      "css": 12964
     },
     "lazy:features/work/components/AgentLine.svelte": {
       "js": 66634,
@@ -429,12 +429,12 @@
       "css": 6727
     },
     "lazy:features/work/components/WorkCanvas.svelte": {
-      "js": 443025,
-      "css": 123412
+      "js": 443029,
+      "css": 123415
     },
     "lazy:features/work/components/WorkEnvironmentWorkspace.svelte": {
       "js": 568862,
-      "css": 52610
+      "css": 52749
     },
     "lazy:features/work/components/WorkFileInspector.svelte": {
       "js": 7209,
