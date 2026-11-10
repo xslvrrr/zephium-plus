@@ -6,6 +6,8 @@ mod agent_history;
 pub(crate) mod agentic_liveness_probe;
 #[cfg(feature = "agentic-browser-qa")]
 pub(crate) mod profile_seed_probe;
+#[cfg(feature = "blocker-bench")]
+pub mod qa_capture;
 #[cfg(feature = "agentic-browser")]
 pub(crate) use agent_history::AgentHistoryBackTicket;
 #[cfg(all(
@@ -41,7 +43,7 @@ pub(crate) use page_reader_probe::run as run_page_reader_probe;
 pub(crate) mod audio;
 pub(crate) mod capture;
 pub(crate) mod fullscreen;
-pub(crate) use automatic_pip::automatic_pip;
+pub(crate) use automatic_pip::{after_document_fullscreen, automatic_pip};
 pub(crate) use fullscreen::{exit as exit_fullscreen, state as fullscreen_state};
 pub(crate) mod autofill;
 mod content_filter;
@@ -847,3 +849,5 @@ pub(crate) fn media_diagnostics_enabled() -> bool {
 pub(crate) fn configure_media_diagnostic(public: bool, account: bool) {
     semantic_runtime::configure_media_diagnostic(public, account);
 }
+
+pub(crate) mod tab_preview;

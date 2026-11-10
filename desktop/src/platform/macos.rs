@@ -385,6 +385,33 @@ pub fn set_chrome_hidden(window: &WebviewWindow, hidden: bool) -> bool {
         .is_ok()
 }
 
+/// Moves the chrome WebView to a new content process with an empty history.
+/// What a document left in its process (decoded images, graphics buffers,
+/// collected-but-unreturned heap) goes with the old one.
+pub fn restart_content_process(window: &WebviewWindow) {
+    let app = window.app_handle().clone();
+    let _ = window.with_webview(move |webview| {
+        // SAFETY: Tauri supplies a live WKWebView pointer for the duration
+        // of this main-thread callback.
+        let webkit: &WKWebView = unsafe { &*webview.inner().cast() };
+        // SAFETY: NSObject's `respondsToSelector:` takes a selector and
+        // returns BOOL.
+        let restarts: bool = unsafe {
+            msg_send![
+                webkit,
+                respondsToSelector: objc2::sel!(_killWebContentProcessAndResetState)
+            ]
+        };
+        if restarts {
+            // Only a restart that happens may stand in for a crash.
+            crate::renderer_recovery::expect_restart(&app);
+            // SAFETY: checked above; WebKit declares it with no arguments
+            // and no result.
+            let _: () = unsafe { msg_send![webkit, _killWebContentProcessAndResetState] };
+        }
+    });
+}
+
 pub fn harden_privileged(window: &WebviewWindow) -> bool {
     let installed = Arc::new(AtomicU64::new(0));
     let completed = installed.clone();
@@ -718,7 +745,11 @@ pub fn reach_zones_set(window: &WebviewWindow, zones: Vec<crate::reach_zones::Zo
 
 /// Native has a new column width; a guide left at another edge goes off.
 pub fn sidebar_column_width(window: &WebviewWindow, width: f64) {
-    let _ = window.run_on_main_thread(move || sidebar_resize::column_width(width));
+    let owner = window.clone();
+    let _ = window.run_on_main_thread(move || {
+        sidebar_resize::column_width(width);
+        sidebar_edge::column_width(&owner, width);
+    });
 }
 
 pub async fn configure_sidebar_resize(
@@ -744,20 +775,20 @@ pub async fn configure_sidebar_resize(
             else {
                 return false;
             };
-            let commit = std::rc::Rc::new(move |width, revision| {
+            let commit = std::rc::Rc::new(move |width, revision, active: Option<bool>| {
                 if CHROME_GENERATION.load(Ordering::Acquire) != generation
                     || !sidebar_resize::publish_revision(revision)
                 {
                     return;
                 }
-                // A guide release is a snap to a new shape: the content
-                // travels there, which also covers the chrome's repaint.
-                if shell.dispatch(zephium_app::Command::SetSidebarWidth(width, true)) {
+                let hidden = HIDDEN_SIDEBARS.with(|windows| windows.borrow().contains(sender.label()));
+                if shell.dispatch(zephium_app::Command::SetSidebarWidth(width, !hidden && active.is_none())) {
+                    let event = if active.is_some() { "zephium:sidebar-resize-progress" } else { "zephium:sidebar-width-selected" };
                     crate::emit_to_privileged(
                         sender.app_handle(),
                         crate::MAIN_LABEL,
-                        "zephium:sidebar-width-selected",
-                        &serde_json::json!({"width": width, "revision": revision}),
+                        event,
+                        &serde_json::json!({"width": width, "revision": revision, "active": active}),
                     );
                 }
             });
@@ -1002,9 +1033,10 @@ thread_local! {
 }
 
 /// Keyboard-only commands (Select Tab 1-9) have no menu item to carry their
-/// key equivalent, so a local monitor matches them before the focused web
-/// view sees the keystroke, and extensions' commands after them. Only the main
-/// window's keys are considered; the launcher panel keeps its own.
+/// key equivalent, and Next/Previous Tab must not reach the page (a page
+/// keystroke hides the pointer), so a local monitor matches them before the
+/// focused web view sees the keystroke, and extensions' commands after them.
+/// Only the main window's keys are considered; the launcher panel keeps its own.
 pub fn install_key_monitor(
     window: &WebviewWindow,
     table: Arc<std::sync::RwLock<Vec<(zephium_core::accelerator::Accelerator, &'static str)>>>,

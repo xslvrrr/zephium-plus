@@ -4,11 +4,11 @@
 #[cfg(all(
     feature = "adblock-qa",
     any(
-        not(debug_assertions),
+        not(any(debug_assertions, zephium_protection_qa_profile)),
         not(any(target_os = "macos", target_os = "windows"))
     )
 ))]
-compile_error!("protection QA requires a macOS or Windows debug build");
+compile_error!("protection QA requires a macOS or Windows debug or protection-qa build");
 
 #[cfg(all(
     feature = "file-workflows-qa",
@@ -67,6 +67,8 @@ pub use work::{
 
 mod about;
 mod account;
+#[cfg(feature = "adblock-qa")]
+mod blocker_bench;
 mod blocker_service;
 mod browser_credentials;
 mod browser_import;
@@ -103,6 +105,8 @@ mod media;
 mod memory_pressure;
 mod menu_text;
 mod notes;
+#[cfg(target_os = "windows")]
+mod onboarding_host;
 mod overlay;
 mod page_assist;
 mod page_source;
@@ -119,6 +123,7 @@ mod claude_code;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod reach_zones;
 mod recently_closed;
+mod relaunch;
 #[cfg(any(target_os = "macos", target_os = "windows", test))]
 mod renderer_recovery;
 mod resource_close;
@@ -131,10 +136,17 @@ mod startup_alert;
 mod startup_styles;
 mod swipe;
 mod system_time;
+mod tab_previews;
+mod tab_switcher;
+#[cfg(all(target_os = "windows", feature = "work-product"))]
+mod taskbar_badge;
 mod updates;
 mod voice;
 mod webext;
-#[cfg(all(target_os = "windows", feature = "webext-qa"))]
+#[cfg(any(
+    all(target_os = "windows", feature = "webext-qa"),
+    feature = "adblock-qa"
+))]
 mod webext_qa;
 mod windows_privacy;
 #[cfg(feature = "work-product")]
@@ -178,13 +190,15 @@ use zephium_core::extensions::{
     ExtensionRuntimeInstance,
 };
 use zephium_core::geometry::{Rect, Size};
+#[cfg(not(target_os = "macos"))]
 use zephium_core::ids::ScriptId;
 use zephium_core::ids::{ExtensionInstallId, ItemId, ProfileId};
+#[cfg(not(target_os = "macos"))]
 use zephium_core::injection::MatchSet;
 use zephium_core::ports::blocker::{BlockerCompiler as _, BlockerShutdownOutcome};
-use zephium_core::ports::engine::{
-    Engine as _, ScriptOwner, UserContent, UserContentGeneration, UserStyle,
-};
+use zephium_core::ports::engine::{Engine as _, UserContent, UserContentGeneration};
+#[cfg(not(target_os = "macos"))]
+use zephium_core::ports::engine::{ScriptOwner, UserStyle};
 use zephium_core::ports::store::{Store as _, StoreShutdownOutcome};
 use zephium_core::split::Axis;
 use zephium_engine::{InitialUserContent, MainThreadDispatch, WebviewEngine};
@@ -197,27 +211,14 @@ macro_rules! diagnostic {
     }};
 }
 
-// Only the thumb may paint. Every other part stays transparent so the page
-// background shows through the gutter; an unstyled scrollbar background is
-// what rendered as a detached band along the edge.
-macro_rules! scrollbar_base_css {
-    () => {
-        "::-webkit-scrollbar{width:10px;height:10px;background:transparent}::-webkit-scrollbar-thumb{background:rgba(140,140,150,.45);border-radius:8px;border:2px solid transparent;background-clip:padding-box}::-webkit-scrollbar-thumb:hover{background:rgba(140,140,150,.75);background-clip:padding-box}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-button{display:none}"
-    };
-}
-
-// WebKit fills the main frame's styled scroll corner with the view's white
-// base color before painting it, so any corner style shows white beside a
-// dark page. Unstyled, the corner lets the page background through.
-#[cfg(target_os = "macos")]
-const SCROLLBAR_CSS: &str = scrollbar_base_css!();
-
-// Chromium paints an unstyled corner with its default theme square.
+// Pages on macOS keep WebKit's own scrollbars: styled ones cost every
+// scrollable element and frame about 2% on Speedometer. Only the thumb may
+// paint here; every other part stays transparent so the page background
+// shows through the gutter (an unstyled scrollbar background rendered as a
+// detached band along the edge), and Chromium paints an unstyled corner
+// with its default theme square.
 #[cfg(not(target_os = "macos"))]
-const SCROLLBAR_CSS: &str = concat!(
-    scrollbar_base_css!(),
-    "::-webkit-scrollbar-corner{background:transparent}"
-);
+const SCROLLBAR_CSS: &str = "::-webkit-scrollbar{width:10px;height:10px;background:transparent}::-webkit-scrollbar-thumb{background:rgba(140,140,150,.45);border-radius:8px;border:2px solid transparent;background-clip:padding-box}::-webkit-scrollbar-thumb:hover{background:rgba(140,140,150,.75);background-clip:padding-box}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-button{display:none}::-webkit-scrollbar-corner{background:transparent}";
 
 static APP_STARTED: OnceLock<std::time::Instant> = OnceLock::new();
 static APP_STORE: OnceLock<Arc<SqliteStore>> = OnceLock::new();
@@ -271,10 +272,14 @@ const PRE_SHELL_CLEANUP_TIMEOUT: std::time::Duration = std::time::Duration::from
 const PRIVILEGED_PERMISSIONS_POLICY: &str = "accelerometer=(), attribution-reporting=(), autoplay=(), browsing-topics=(), camera=(), clipboard-read=(), clipboard-write=(self), compute-pressure=(), display-capture=(), document-domain=(), encrypted-media=(), fullscreen=(), gamepad=(), geolocation=(), gyroscope=(), hid=(), idle-detection=(), join-ad-interest-group=(), local-fonts=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), private-state-token-issuance=(), private-state-token-redemption=(), publickey-credentials-get=(), run-ad-auction=(), screen-wake-lock=(), serial=(), speaker-selection=(), storage-access=(), sync-xhr=(), unload=(), usb=(), web-share=(), window-management=(), xr-spatial-tracking=()";
 const PRIVILEGED_BOOTSTRAP_URL: &str = "about:blank";
 // The chrome and launcher load their own pages, so a warm spare renderer
-// waiting for another site would mostly sit in memory.
+// waiting for another site would mostly sit in memory. They load nothing from
+// the network either, so their network service runs inside their browser
+// process instead of a utility process of its own. Page environments never
+// take these arguments.
 #[cfg(any(target_os = "windows", test))]
 const PRIVILEGED_WEBVIEW2_BROWSER_ARGS: &str =
-    "--disable-features=msWebOOUI,msPdfOOUI,SpareRendererForSitePerProcess";
+    "--disable-features=msWebOOUI,msPdfOOUI,SpareRendererForSitePerProcess \
+     --enable-features=NetworkServiceInProcess2";
 
 #[derive(Clone)]
 struct ShutdownCoordinator {
@@ -404,11 +409,20 @@ impl ClaimedTerminalStartupResources {
     }
 }
 
+/// Outlasts the shell's end-to-end shutdown budget on each platform.
+const HARD_EXIT_TIMEOUT: std::time::Duration = if cfg!(target_os = "windows") {
+    std::time::Duration::from_secs(30)
+} else {
+    std::time::Duration::from_secs(12)
+};
+
 #[derive(Default)]
 struct HardExitWatchdog {
     prepared: AtomicBool,
     deadline: Mutex<Option<std::time::Instant>>,
     changed: std::sync::Condvar,
+    #[cfg(any(target_os = "macos", test))]
+    installing: AtomicBool,
 }
 
 #[derive(Clone)]
@@ -527,6 +541,8 @@ impl UiStartupGate {
                     started.elapsed().as_millis()
                 );
             }
+            #[cfg(feature = "adblock-qa")]
+            blocker_bench::window_shown();
             on_main_window_mapped(window);
             #[cfg(feature = "work-development-traces")]
             startup_styles::after_show(window, &self.expected());
@@ -539,6 +555,20 @@ impl UiStartupGate {
     /// are still in the back-forward list, so history navigation of any kind
     /// (mouse button, swipe, shortcut, script) ends here.
     fn permits_navigation(&self, url: &tauri::Url) -> bool {
+        // Onboarding may be served from a host of its own, which nothing else
+        // admits: it is let in as this launch's onboarding, until handover.
+        let onboarding = self.handover.as_ref().is_some_and(|handover| {
+            let onboarding = &handover.onboarding;
+            url.scheme() == onboarding.scheme()
+                && url.host_str() == onboarding.host_str()
+                && url.port() == onboarding.port()
+                && url.path() == onboarding.path()
+        });
+        if onboarding {
+            return url.username().is_empty()
+                && url.password().is_none()
+                && !self.handed_over.load(Ordering::Acquire);
+        }
         if !ui_navigation_allowed(url) {
             return false;
         }
@@ -546,13 +576,7 @@ impl UiStartupGate {
             return !self.visible.load(Ordering::Acquire)
                 && !self.handed_over.load(Ordering::Acquire);
         }
-        let onboarding = self.handover.as_ref().map(|handover| &handover.onboarding);
-        !(self.handed_over.load(Ordering::Acquire)
-            && onboarding.is_some_and(|onboarding| {
-                url.scheme() == onboarding.scheme()
-                    && url.host_str() == onboarding.host_str()
-                    && url.path() == onboarding.path()
-            }))
+        true
     }
 
     /// Whether the caller is the onboarding page this launch opened, and it
@@ -591,6 +615,10 @@ impl UiStartupGate {
         if !platform::imp::set_chrome_hidden(window, true) {
             diagnostic!("onboarding: chrome could not be hidden for the handover");
         }
+        // Onboarding leaves tens of MB in its content process for as long as
+        // it lives; the browser starts in a new one.
+        #[cfg(target_os = "macos")]
+        platform::imp::restart_content_process(window);
         if let Err(error) = window.navigate(handover.browser.clone()) {
             request_startup_failure(
                 window.app_handle(),
@@ -631,6 +659,8 @@ impl UiStartupGate {
         {
             return;
         }
+        #[cfg(target_os = "macos")]
+        renderer_recovery::restart_settled(window.app_handle());
         let _ = window.set_resizable(true);
         let _ = window.set_maximizable(true);
         if !platform::imp::set_chrome_hidden(window, false) {
@@ -696,8 +726,42 @@ fn show_initialized_main_window(window: &WebviewWindow) -> Result<(), String> {
     }
     #[cfg(not(all(unix, not(target_os = "macos"))))]
     {
+        #[cfg(target_os = "windows")]
+        fit_to_work_area(window);
         window.show().map_err(|error| error.to_string())
     }
+}
+
+/// The default size is taller than a scaled 1080p screen's work area, which
+/// would leave the window under the taskbar; it shrinks to fit and is centred.
+#[cfg(target_os = "windows")]
+fn fit_to_work_area(window: &WebviewWindow) {
+    let (Ok(Some(monitor)), Ok(outer), Ok(inner)) = (
+        window.current_monitor(),
+        window.outer_size(),
+        window.inner_size(),
+    ) else {
+        return;
+    };
+    let work = monitor.work_area();
+    if outer.width <= work.size.width && outer.height <= work.size.height {
+        return;
+    }
+    let width = outer.width.min(work.size.width);
+    let height = outer.height.min(work.size.height);
+    let frame = (
+        outer.width.saturating_sub(inner.width),
+        outer.height.saturating_sub(inner.height),
+    );
+    let _ = window.set_size(tauri::PhysicalSize::new(
+        width.saturating_sub(frame.0),
+        height.saturating_sub(frame.1),
+    ));
+    let offset = |room: u32, used: u32| i32::try_from(room.saturating_sub(used) / 2).unwrap_or(0);
+    let _ = window.set_position(tauri::PhysicalPosition::new(
+        work.position.x + offset(work.size.width, width),
+        work.position.y + offset(work.size.height, height),
+    ));
 }
 
 const NO_AUTHORIZED_EXIT_CODE: i32 = -1;
@@ -817,7 +881,38 @@ fn cleanup_supplemental_startup_resources(
     });
 }
 
+#[cfg(target_os = "windows")]
+fn terminate_windows_process(exit_code: i32) -> ! {
+    use windows::Win32::System::Threading::{GetCurrentProcess, TerminateProcess};
+    let logs_flushed = platform::imp::flush_stderr_until(
+        std::time::Instant::now() + std::time::Duration::from_secs(1),
+    );
+    let code = if logs_flushed { exit_code } else { 1 };
+    // The coordinator has settled or exhausted its deadline. Do not enter
+    // arbitrary DLL detach handlers via ExitProcess while holding the profile.
+    unsafe {
+        let _ = TerminateProcess(GetCurrentProcess(), code as u32);
+    }
+    std::process::abort();
+}
+
 impl HardExitWatchdog {
+    #[cfg(any(target_os = "macos", test))]
+    fn begin_install(&self) -> bool {
+        let mut deadline = self
+            .deadline
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let now = std::time::Instant::now();
+        if deadline.is_none_or(|deadline| deadline <= now) {
+            return false;
+        }
+        if !self.installing.swap(true, Ordering::AcqRel) {
+            *deadline = Some(now + std::time::Duration::from_secs(60));
+            self.changed.notify_one();
+        }
+        true
+    }
     fn prepare(self: &Arc<Self>) -> std::io::Result<()> {
         if self
             .prepared
@@ -835,23 +930,31 @@ impl HardExitWatchdog {
                     .deadline
                     .lock()
                     .unwrap_or_else(|poisoned| poisoned.into_inner());
-                while deadline.is_none() {
-                    deadline = watchdog
-                        .changed
-                        .wait(deadline)
-                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                loop {
+                    if let Some(armed) = *deadline {
+                        let remaining = armed.saturating_duration_since(std::time::Instant::now());
+                        if remaining.is_zero() {
+                            break;
+                        }
+                        (deadline, _) = watchdog
+                            .changed
+                            .wait_timeout(deadline, remaining)
+                            .unwrap_or_else(|error| error.into_inner());
+                    } else {
+                        deadline = watchdog
+                            .changed
+                            .wait(deadline)
+                            .unwrap_or_else(|error| error.into_inner());
+                    }
                 }
-                let armed_deadline = (*deadline).unwrap_or_else(std::time::Instant::now);
                 drop(deadline);
-
-                let remaining =
-                    armed_deadline.saturating_duration_since(std::time::Instant::now());
-                if !remaining.is_zero() {
-                    std::thread::sleep(remaining);
-                }
+                #[cfg(not(target_os = "windows"))]
                 write_diagnostic(format_args!(
                     "shutdown: process exit did not complete within the hard deadline; forcing unsuccessful termination"
                 ));
+                #[cfg(target_os = "windows")]
+                terminate_windows_process(1);
+                #[cfg(not(target_os = "windows"))]
                 std::process::exit(1);
             });
         if let Err(error) = spawned {
@@ -870,7 +973,7 @@ impl HardExitWatchdog {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         if deadline.is_none() {
-            *deadline = Some(std::time::Instant::now() + std::time::Duration::from_secs(12));
+            *deadline = Some(std::time::Instant::now() + HARD_EXIT_TIMEOUT);
             self.changed.notify_one();
         }
         true
@@ -954,6 +1057,11 @@ impl ShutdownCoordinator {
             self.schedule_authorized_exit(app, 1);
             return;
         }
+        hide_windows_for_shutdown(&app);
+        let deadline = shell.shutdown_deadline();
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        let deadline = tao::event_loop::system_termination_deadline()
+            .map_or(deadline, |system| system.min(deadline));
         #[cfg(feature = "work-product")]
         if let Some(work) = app.try_state::<work_product::WorkProductState>() {
             let operations = work.operations.clone();
@@ -963,15 +1071,20 @@ impl ShutdownCoordinator {
                     coordinator.terminal_failure.store(true, Ordering::Release);
                     diagnostic!("shutdown: Work operation cleanup was not proven");
                 }
-                coordinator.request_after_work(app, shell);
+                coordinator.request_after_work(app, shell, deadline);
             });
             return;
         }
-        self.request_after_work(app, shell);
+        self.request_after_work(app, shell, deadline);
     }
 
-    fn request_after_work(&self, app: tauri::AppHandle, shell: Handle) {
-        let completion = shell.shutdown();
+    fn request_after_work(
+        &self,
+        app: tauri::AppHandle,
+        shell: Handle,
+        deadline: std::time::Instant,
+    ) {
+        let completion = shell.shutdown_with_deadline(deadline);
         let coordinator = self.clone();
         // SQLite and the shell actor are blocking by design. Wait away from
         // the event loop, then schedule a permitted exit back onto it.
@@ -984,9 +1097,7 @@ impl ShutdownCoordinator {
     fn finish_requested_shutdown(&self, app: tauri::AppHandle, outcome: ShutdownOutcome) {
         match outcome {
             ShutdownOutcome::RetryableFailure => {
-                // The shell has not started native teardown, so an embedding
-                // host could safely retry. A desktop close is terminal: exit
-                // non-zero instead of leaving an unclosable process.
+                // An unproven storage barrier must remain an unsuccessful exit.
                 diagnostic!(
                     "shutdown: final session durability was not proven before the deadline; exiting unsuccessfully"
                 );
@@ -1131,6 +1242,19 @@ impl ShutdownCoordinator {
 
     fn arm_hard_exit_watchdog(&self) -> bool {
         self.watchdog.arm()
+    }
+}
+
+/// A closed browser leaves the screen at once; the windows themselves stay
+/// alive until native teardown destroys them in order.
+fn hide_windows_for_shutdown(app: &tauri::AppHandle) {
+    for window in app.webview_windows().into_values() {
+        if let Err(error) = window.hide() {
+            write_diagnostic(format_args!(
+                "shutdown: window {} could not be hidden: {error}",
+                window.label()
+            ));
+        }
     }
 }
 
@@ -1754,6 +1878,8 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             tabs_answer_page_request,
             tabs_answer_sign_in,
             tabs_continue_past_certificate,
+            tabs_continue_past_block,
+            tabs_leave_blocked_page,
             diagnostics_show_logs,
             diagnostic_report::diagnostics_report,
             tabs_back,
@@ -1787,6 +1913,7 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             browser_credentials::browser_passkey_authorization_request,
             page_permission_respond,
             page_permission_card_host,
+            chrome_modal,
             tab_set_muted,
             media_player,
             site_permissions,
@@ -1819,6 +1946,8 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             run_command,
             panel_hide,
             panel_ready,
+            tab_switcher::tab_switcher_open,
+            tab_switcher::tab_switcher_action,
             panel_intent,
             panel_layout,
             launcher_edit,
@@ -1828,6 +1957,7 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             launcher_set_double_tap,
             launcher_open_accessibility,
             setting_get,
+            search_shortcut_defaults,
             setting_set,
             windows_privacy::windows_diagnostics_settings,
             windows_privacy::windows_reputation_managed,
@@ -1875,6 +2005,7 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             updates::update_status,
             updates::update_check,
             updates::update_relaunch,
+            relaunch::app_relaunch,
             updates::update_highlights,
             updates::open_software_update,
             browser_open_url,
@@ -2257,10 +2388,15 @@ pub(crate) fn restore_browser_chrome(
         if (row.dataset.zephiumTabUrl !== (active.url ?? '') || row.dataset.zephiumProjectionRevision !== active.projection_revision || row.querySelector('[data-zephium-tab-label]')?.textContent !== active.title) return '';
         const address = document.querySelector('[data-zephium-address]');
         if (!(address instanceof HTMLInputElement)) return '';
-        const host = active.url ? new URL(active.url).host : '';
+        // A failure filling the pane names its own address, on failedPane's terms.
+        const failure = active.failure;
+        const failed = !!failure && (failure.covers_page || (!active.loading && (!active.url || active.availability?.state === 'sleeping')));
+        const shown = failed ? failure.url : active.url;
+        let host = '';
+        try {{ host = shown ? new URL(shown).host : ''; }} catch {{ return ''; }}
         if (address.value !== host) {{ address.value = host; address.dispatchEvent(new Event('input', {{ bubbles: true }})); }}
         if (address.value !== host) return '';
-        if (!!document.querySelector('[data-zephium-new-tab]') !== ((active.content ?? 'web') === 'web' && !active.url && !active.loading)) return '';
+        if (!!document.querySelector('[data-zephium-new-tab]') !== ((active.content ?? 'web') === 'web' && !active.url && !active.loading && !failed)) return '';
       }}
       void document.documentElement.getBoundingClientRect();
       return {expected};
@@ -2300,18 +2436,21 @@ const LAUNCHER_THEME_KEYS: &[&str] = &[
     "ui.font-size=",
 ];
 
-fn emit_ui_command(app: &tauri::AppHandle, id: &str) {
-    emit_to_privileged(app, MAIN_LABEL, EVENT_UI, &id);
-    // The launcher follows appearance, motion and language only; anything else would
-    // wake its hidden WebView for a command it ignores.
-    if id.starts_with("theme.")
+fn launcher_follows_ui_command(id: &str) -> bool {
+    id.starts_with("theme.")
+        || id.starts_with("preference.search.shortcuts=")
         || id.starts_with("preference.ui.reduce-motion=")
         || id.starts_with("preference.ui.language=")
         || LAUNCHER_THEME_KEYS.iter().any(|key| {
             id.strip_prefix("preference.")
                 .is_some_and(|rest| rest.starts_with(key))
         })
-    {
+}
+
+fn emit_ui_command(app: &tauri::AppHandle, id: &str) {
+    emit_to_privileged(app, MAIN_LABEL, EVENT_UI, &id);
+    // Only consumed settings wake the hidden launcher WebView.
+    if launcher_follows_ui_command(id) {
         emit_to_privileged(app, overlay::PANEL_LABEL, EVENT_UI, &id);
     }
 }
@@ -2969,6 +3108,7 @@ fn tabs_answer_page_request(
     caller: WebviewWindow,
     shell: State<'_, Handle>,
     id: String,
+    request: u32,
     answer: zephium_ipc::PageRequestAnswer,
 ) -> zephium_ipc::OperationAdmission {
     if !authorize(&caller, CallerPolicy::Main, "tabs_answer_page_request") {
@@ -2982,7 +3122,11 @@ fn tabs_answer_page_request(
         zephium_ipc::PageRequestAnswer::Dismiss => zephium_app::PageRequestDecision::Dismiss,
     };
     dispatch_with_id(caller.app_handle(), &shell, &id, |id| {
-        Command::AnswerPageRequest { id, decision }
+        Command::AnswerPageRequest {
+            id,
+            request,
+            decision,
+        }
     })
 }
 
@@ -3035,6 +3179,41 @@ fn tabs_continue_past_certificate(
         &id,
         Command::ContinuePastCertificate,
     )
+}
+
+/// Opens the page the filter lists refused anyway; its host stays allowed
+/// until the app quits.
+#[tauri::command]
+#[specta::specta]
+fn tabs_continue_past_block(
+    caller: WebviewWindow,
+    shell: State<'_, Handle>,
+    id: String,
+    url: String,
+) -> zephium_ipc::OperationAdmission {
+    if !authorize(&caller, CallerPolicy::Main, "tabs_continue_past_block") {
+        return rejected_operation();
+    }
+    if !bounded(&url, MAX_NAVIGATION_INPUT_BYTES) {
+        return rejected_operation();
+    }
+    dispatch_with_id(caller.app_handle(), &shell, &id, |id| {
+        Command::ContinuePastBlock { id, url }
+    })
+}
+
+/// Leaves the page the filter lists refused.
+#[tauri::command]
+#[specta::specta]
+fn tabs_leave_blocked_page(
+    caller: WebviewWindow,
+    shell: State<'_, Handle>,
+    id: String,
+) -> zephium_ipc::OperationAdmission {
+    if !authorize(&caller, CallerPolicy::Main, "tabs_leave_blocked_page") {
+        return rejected_operation();
+    }
+    dispatch_with_id(caller.app_handle(), &shell, &id, Command::LeaveBlockedPage)
 }
 
 #[tauri::command]
@@ -3463,6 +3642,19 @@ fn page_permission_card_host(caller: WebviewWindow, shell: State<'_, Handle>, av
     shell.dispatch(Command::SetPagePermissionCardHost(available));
 }
 
+/// Whether one of the browser's own dialogs is open over the window. Pages
+/// are native views above chrome, so they leave the screen while it shows.
+#[tauri::command]
+#[specta::specta]
+fn chrome_modal(caller: WebviewWindow, shell: State<'_, Handle>, open: bool) {
+    if !authorize(&caller, CallerPolicy::Main, "chrome_modal")
+        || shutdown_started(caller.app_handle())
+    {
+        return;
+    }
+    shell.dispatch(Command::SetChromeModal(open));
+}
+
 static SITE_PERMISSIONS_QUERY_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 
 /// The focused profile's saved site decisions, of `origin` only when given.
@@ -3513,6 +3705,7 @@ fn site_permission_set(
     origin: String,
     kind: zephium_ipc::SitePermissionKindView,
     decision: Option<zephium_ipc::SitePermissionDecisionView>,
+    scheme: Option<String>,
 ) -> zephium_ipc::OperationAdmission {
     use zephium_core::permissions::{RememberedPagePermission, SitePermissionKind as Kind};
     use zephium_ipc::SitePermissionKindView as View;
@@ -3535,7 +3728,12 @@ fn site_permission_set(
         View::LocalFonts => Kind::LocalFonts,
         View::AutomaticDownloads => Kind::AutomaticDownloads,
         View::Popups => Kind::Popups,
+        View::Downloads => Kind::Downloads,
+        View::AppLinks => Kind::AppLinks,
     };
+    if !site_permission_scheme_admitted(kind, scheme.as_deref()) {
+        return rejected_operation();
+    }
     let decision = decision.map(|decision| match decision {
         zephium_ipc::SitePermissionDecisionView::Allow => RememberedPagePermission::Allow,
         zephium_ipc::SitePermissionDecisionView::Block => RememberedPagePermission::Deny,
@@ -3547,8 +3745,23 @@ fn site_permission_set(
             origin,
             kind,
             decision,
+            scheme,
         },
     )
+}
+
+/// Only an application link grant names a scheme, and only one an
+/// application link could use; every other kind names none.
+fn site_permission_scheme_admitted(
+    kind: zephium_core::permissions::SitePermissionKind,
+    scheme: Option<&str>,
+) -> bool {
+    match kind {
+        zephium_core::permissions::SitePermissionKind::AppLinks => {
+            scheme.is_some_and(zephium_core::navigation::app_link_scheme)
+        }
+        _ => scheme.is_none(),
+    }
 }
 
 #[tauri::command]
@@ -3745,6 +3958,20 @@ fn toggle_window_fullscreen(window: &WebviewWindow) {
 }
 
 fn execute_command(app: &tauri::AppHandle, id: &str) -> zephium_ipc::OperationAdmission {
+    execute_command_or(app, id, || {
+        app.try_state::<Handle>()
+            .map_or_else(rejected_operation, |shell| {
+                dispatch_operation(app, &shell, Command::Run(id.to_string()))
+            })
+    })
+}
+
+/// Runs a command the app owns itself, handing one the shell owns to `shell`.
+fn execute_command_or(
+    app: &tauri::AppHandle,
+    id: &str,
+    shell: impl FnOnce() -> zephium_ipc::OperationAdmission,
+) -> zephium_ipc::OperationAdmission {
     if id == "browser.quit" {
         app.exit(0);
         return accepted_ui_operation();
@@ -3753,6 +3980,16 @@ fn execute_command(app: &tauri::AppHandle, id: &str) -> zephium_ipc::OperationAd
         return rejected_operation();
     }
     let id = zephium_core::commands::runs_as(id);
+    if id == "tab.close" && tab_switcher::close_selected(app) {
+        return accepted_ui_operation();
+    }
+    if matches!(id, "tab.recent.next" | "tab.recent.previous") {
+        return if tab_switcher::step(app, id == "tab.recent.previous", true) {
+            accepted_ui_operation()
+        } else {
+            rejected_operation()
+        };
+    }
     // A feature switched off has no way in, from any menu, key or launcher.
     if !app
         .try_state::<keymap::Keymap>()
@@ -3975,9 +4212,7 @@ fn execute_command(app: &tauri::AppHandle, id: &str) -> zephium_ipc::OperationAd
             });
     }
     if zephium_core::commands::get(id).is_some() {
-        if let Some(shell) = app.try_state::<Handle>() {
-            return dispatch_operation(app, &shell, Command::Run(id.to_string()));
-        }
+        return shell();
     }
     rejected_operation()
 }
@@ -4261,9 +4496,102 @@ fn launcher_run(
     // Only an address can be sent behind the current tab; every other action
     // is about where the user is going next.
     let background = background && matches!(action, zephium_ipc::SearchAction::OpenUrl { .. });
+    // Armed before either path runs, so one action at a time reaches the
+    // launcher's outcome, wherever it is carried out.
     if !overlay.arm_action(&operation_id, &context, background) {
         return finish_operation_admission(&ledger, operation_id, false);
     }
+    let zephium_ipc::SearchAction::RunCommand { id } = &action else {
+        return run_in_shell(
+            &shell,
+            &overlay,
+            &ledger,
+            operation_id,
+            action,
+            context,
+            background,
+        );
+    };
+    let (admission, settlement) = route_launcher_command(
+        |to_shell| execute_command_or(&app, id, to_shell),
+        || {
+            run_in_shell(
+                &shell,
+                &overlay,
+                &ledger,
+                operation_id.clone(),
+                action.clone(),
+                context.clone(),
+                false,
+            )
+        },
+    );
+    match settlement {
+        LauncherSettlement::Shell => {}
+        LauncherSettlement::Admitted => {
+            // No disposition will ever carry this id back, so it settles here.
+            ledger.cancel_reservation(&operation_id);
+            overlay.operation(zephium_ipc::OperationDisposition {
+                operation_id,
+                outcome: zephium_ipc::OperationOutcome::Applied,
+                reason: zephium_ipc::OperationReason::MutationApplied,
+            });
+        }
+        LauncherSettlement::Refused => {
+            ledger.cancel_reservation(&operation_id);
+            overlay.action_rejected(&operation_id);
+        }
+    }
+    admission
+}
+
+/// Who settles an armed launcher command, and when.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LauncherSettlement {
+    /// The shell owns it; its disposition settles the launcher later.
+    Shell,
+    /// The app ran it, so the launcher settles now and steps aside.
+    Admitted,
+    /// The app refused it; the launcher stays open to say so.
+    Refused,
+}
+
+/// The shell runs only what acts on tabs and pages. A Settings section, a
+/// tool or a browser page belongs to the app, so `execute` runs it the way a
+/// menu or a key runs it, and calls `to_shell` only for a command the shell
+/// owns.
+fn route_launcher_command(
+    execute: impl FnOnce(
+        Box<dyn FnOnce() -> zephium_ipc::OperationAdmission + '_>,
+    ) -> zephium_ipc::OperationAdmission,
+    to_shell: impl FnOnce() -> zephium_ipc::OperationAdmission,
+) -> (zephium_ipc::OperationAdmission, LauncherSettlement) {
+    let mut in_shell = false;
+    let admission = execute(Box::new(|| {
+        in_shell = true;
+        to_shell()
+    }));
+    let settlement = if in_shell {
+        LauncherSettlement::Shell
+    } else if admission.accepted {
+        LauncherSettlement::Admitted
+    } else {
+        LauncherSettlement::Refused
+    };
+    (admission, settlement)
+}
+
+/// Sends an armed launcher action to the shell, whose disposition settles
+/// the launcher.
+fn run_in_shell(
+    shell: &Handle,
+    overlay: &overlay::Overlay,
+    ledger: &OperationLedger,
+    operation_id: String,
+    action: zephium_ipc::SearchAction,
+    context: zephium_ipc::SearchContext,
+    background: bool,
+) -> zephium_ipc::OperationAdmission {
     let accepted = shell.dispatch_operation(
         operation_id.clone(),
         Command::RunSearchAction {
@@ -4276,7 +4604,7 @@ fn launcher_run(
     if !accepted {
         overlay.action_rejected(&operation_id);
     }
-    finish_operation_admission(&ledger, operation_id, accepted)
+    finish_operation_admission(ledger, operation_id, accepted)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, specta::Type)]
@@ -4887,6 +5215,17 @@ fn focus_control(
 
 #[tauri::command]
 #[specta::specta]
+fn search_shortcut_defaults(caller: WebviewWindow) -> Vec<zephium_core::search::SearchShortcut> {
+    if !authorize(&caller, CallerPolicy::Both, "search_shortcut_defaults") {
+        return Vec::new();
+    }
+    zephium_core::search::ShortcutRegistry::default()
+        .entries()
+        .to_vec()
+}
+
+#[tauri::command]
+#[specta::specta]
 async fn setting_get(caller: WebviewWindow, key: String) -> Option<String> {
     if !authorize(&caller, CallerPolicy::Both, "setting_get") {
         return None;
@@ -4901,7 +5240,15 @@ async fn setting_get(caller: WebviewWindow, key: String) -> Option<String> {
     // A synchronous command runs on the main thread, and the store may be
     // busy for seconds (an import, a deletion); the read waits off it.
     tauri::async_runtime::spawn_blocking(move || {
-        APP_STORE.get().and_then(|store| store.app_setting(&key))
+        let stored = APP_STORE.get().and_then(|store| store.app_setting(&key));
+        if key == "search.shortcuts"
+            && stored.as_deref().is_some_and(|value| {
+                zephium_core::search::ShortcutRegistry::from_setting(value).is_none()
+            })
+        {
+            return Some(String::new());
+        }
+        stored
     })
     .await
     .ok()
@@ -5282,10 +5629,25 @@ fn panel_intent(
 /// instead of the browser.
 const ONBOARDING_PAGE: &str = "onboarding.html";
 
+/// Where a first run's onboarding loads. A bundled Windows build serves it
+/// from a host of its own; see `onboarding_host`.
+fn onboarding_url(app: &tauri::App) -> tauri::Result<tauri::Url> {
+    #[cfg(target_os = "windows")]
+    if !tauri::is_dev() {
+        return tauri::Url::parse(onboarding_host::URL).map_err(tauri::Error::InvalidUrl);
+    }
+    privileged_app_url(app, &tauri::WebviewUrl::App(ONBOARDING_PAGE.into()))
+}
+
 /// Whether this launch opens onboarding. `ZEPHIUM_ONBOARDING=1 pnpm dev`
 /// opens it on an existing profile without recording anything until it is
 /// finished.
 fn onboarding_first(store: &SqliteStore) -> bool {
+    // A fresh benchmark session has no one to finish onboarding.
+    #[cfg(feature = "adblock-qa")]
+    if blocker_bench::enabled() {
+        return false;
+    }
     #[cfg(debug_assertions)]
     if std::env::var("ZEPHIUM_ONBOARDING").as_deref() == Ok("1") {
         return true;
@@ -5436,7 +5798,7 @@ fn sidebar_set_width(
     if !platform::imp::publish_sidebar_resize_revision(revision) {
         return;
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     platform::imp::sidebar_column_width(&caller, width);
     #[cfg(not(target_os = "macos"))]
     let _ = revision;
@@ -6524,6 +6886,16 @@ fn build_profile_menu(
 }
 
 fn handle_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    if matches!(event, tauri::RunEvent::Exit)
+        && tao::event_loop::system_termination_deadline()
+            .is_some_and(|deadline| std::time::Instant::now() >= deadline)
+    {
+        if let Some(shutdown) = app.try_state::<ShutdownCoordinator>() {
+            shutdown.terminal_failure.store(true, Ordering::Release);
+            shutdown.authorized_exit_code.store(1, Ordering::Release);
+        }
+    }
     #[cfg(feature = "macos-work-public-inspection")]
     work_development::on_run_event(app, &event);
     #[cfg(all(
@@ -6550,6 +6922,10 @@ fn handle_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
     if matches!(&event, tauri::RunEvent::Exit) {
         mcp_server::shutdown();
     }
+    #[cfg(not(target_os = "windows"))]
+    if matches!(&event, tauri::RunEvent::Exit) {
+        relaunch::finish_on_exit(app);
+    }
     #[cfg(target_os = "macos")]
     if let tauri::RunEvent::Opened { urls } = &event {
         external_links::hand_off(app, urls.iter().map(|url| url.to_string()), true);
@@ -6560,6 +6936,7 @@ fn handle_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
     };
     if code != Some(1) && updates::blocks_exit(app) {
         api.prevent_exit();
+        relaunch::exit_refused();
         return;
     }
     let Some(coordinator) = app.try_state::<ShutdownCoordinator>() else {
@@ -6648,9 +7025,20 @@ pub fn run() {
         );
         std::process::exit(1);
     }
+    #[cfg(feature = "adblock-qa")]
+    blocker_bench::refuse_bad_arguments();
     install_async_runtime();
     APP_STARTED.get_or_init(std::time::Instant::now);
     let context = tauri::generate_context!();
+    focus_alerts::claim_identity(&context.config().identifier);
+    #[cfg(target_os = "windows")]
+    default_browser::windows::claim(
+        context
+            .config()
+            .product_name
+            .as_deref()
+            .unwrap_or("Zephium"),
+    );
     // A launch that stops before setup has nowhere else to say why.
     #[cfg(all(target_os = "windows", not(feature = "webext-qa")))]
     platform::imp::open_startup_log(&context.config().identifier);
@@ -6689,7 +7077,7 @@ pub fn run() {
             // remain hard failures; an outdated one is an advisory.
             diagnostic!("security: {failure}");
             startup_alert::show_blocking(failure.problem(), failure.detail());
-            std::process::exit(78);
+            terminate_windows_process(78);
         }
     };
 
@@ -6702,6 +7090,8 @@ pub fn run() {
         // Every Tauri-managed webview is zone 2. It may load only the bundled
         // application origin (or the exact Vite origin in debug builds).
         .plugin(navigation_lock())
+        .manage(tab_switcher::Switcher::default())
+        .register_asynchronous_uri_scheme_protocol(tab_previews::SCHEME, tab_previews::serve)
         .register_asynchronous_uri_scheme_protocol(media::SCHEME, media::serve)
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -6718,6 +7108,9 @@ pub fn run() {
     // backend below and uses either direct X11 grabs or the desktop portal.
     #[cfg(not(target_os = "linux"))]
     let builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
+    #[cfg(target_os = "windows")]
+    let builder = builder
+        .register_asynchronous_uri_scheme_protocol(onboarding_host::SCHEME, onboarding_host::serve);
     // Windows hears the same from WebView2 ProcessFailed. Any other WebView
     // keeps Tauri's own plain reload, which this hook replaces for all.
     #[cfg(target_os = "macos")]
@@ -6761,12 +7154,38 @@ pub fn run() {
                 // callback or persistent actor exists. Later callbacks only
                 // signal it and can never fail while spawning a watchdog.
                 shutdown.prepare_hard_exit_watchdog()?;
+                #[cfg(any(target_os = "windows", target_os = "macos"))]
+                let termination_app = app.handle().clone();
+                #[cfg(any(target_os = "windows", target_os = "macos"))]
+                let termination_owner = shutdown.inner().clone();
+                #[cfg(any(target_os = "windows", target_os = "macos"))]
+                tao::event_loop::set_system_termination_handler(
+                    PRE_SHELL_CLEANUP_TIMEOUT,
+                    menu_text::shutdown_reason(),
+                    move || {
+                        if let Some(shell) = termination_app.try_state::<Handle>() {
+                            termination_owner.request(termination_app.clone(), shell.inner().clone());
+                        } else {
+                            termination_owner.request_terminal_startup_failure(
+                                termination_app.clone(),
+                                TerminalStartupResources {
+                                    engine_owner: termination_app.try_state::<StartupEngine>().map(|owner| owner.inner().clone()),
+                                    blocker_owner: termination_app.try_state::<StartupBlocker>().map(|owner| owner.inner().clone()),
+                                    store_owner: termination_app.try_state::<StartupStore>().map(|owner| owner.inner().clone()),
+                                    ..TerminalStartupResources::default()
+                                },
+                            );
+                        }
+                    },
+                );
                 specta.mount_events(app);
                 let data_dir = app.path().app_data_dir()?;
                 #[cfg(all(target_os = "windows", feature = "webext-qa"))]
-                let qa_session = webext_qa::session_label()?;
+                let qa_session = webext_qa::session_label("--webext-qa-session=")?;
                 #[cfg(all(target_os = "windows", feature = "webext-qa"))]
                 let data_dir = webext_qa::data_dir(data_dir, qa_session.as_deref())?;
+                #[cfg(feature = "adblock-qa")]
+                let data_dir = webext_qa::data_dir(data_dir, blocker_bench::session()?.as_deref())?;
                 #[cfg(all(feature = "macos-work-rendering-probe", target_os = "macos"))]
                 foreground_rendering_probe::validate_data_root(&data_dir)?;
                 #[cfg(all(feature = "macos-work-navigation-probe", target_os = "macos"))]
@@ -6863,10 +7282,20 @@ pub fn run() {
                 menu_text::set_language(store.app_setting("ui.language").as_deref());
                 updates::schedule_native_checks(app.handle());
                 work_models::install(app.handle());
+                // The benchmark must not reach the person's keychain or the
+                // account server: the keychain asks for their password.
+                #[cfg(feature = "adblock-qa")]
+                if !blocker_bench::enabled() {
+                    account::install(app.handle());
+                }
+                #[cfg(not(feature = "adblock-qa"))]
                 account::install(app.handle());
 
                 #[cfg(target_os = "windows")]
                 let privileged_runtime = prepare_privileged_runtime_directories(&data_dir)?;
+                #[cfg(target_os = "windows")]
+                let runtime_security_advisories = runtime_security_advisories
+                    .with_optional(privileged_runtime_windows::cleanup_advisory());
 
                 let mut main_config = app
                 .config()
@@ -6881,7 +7310,7 @@ pub fn run() {
                 let onboarding = onboarding_first(store.as_ref());
                 let browser_url = privileged_app_url(app, &main_config.url)?;
                 let app_url = if onboarding {
-                    privileged_app_url(app, &tauri::WebviewUrl::App(ONBOARDING_PAGE.into()))?
+                    onboarding_url(app)?
                 } else {
                     browser_url.clone()
                 };
@@ -6974,6 +7403,21 @@ pub fn run() {
                     // facts and is idempotent in either order.
                     if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
                         page_gate.mark_document_loaded(&window, payload.url());
+                    }
+                    // A replaced document owns neither a sidebar peek nor an
+                    // open dialog; reset both even if its cleanup never ran.
+                    if matches!(payload.event(), tauri::webview::PageLoadEvent::Started)
+                        && window.label() == MAIN_LABEL
+                    {
+                        #[cfg(target_os = "macos")]
+                        platform::imp::sidebar_card_lights(&window, false);
+                        if let Some(shell) = window.app_handle().try_state::<Handle>() {
+                            shell.dispatch(Command::PeekSidebar {
+                                peek: false,
+                                slide: false,
+                            });
+                            shell.dispatch(Command::SetChromeModal(false));
+                        }
                     }
                 })
                 .build()?;
@@ -7077,6 +7521,9 @@ pub fn run() {
                         .expect("initial user-content generation is nonzero"),
                     UserContent {
                         scripts: Vec::new(),
+                        #[cfg(target_os = "macos")]
+                        styles: Vec::new(),
+                        #[cfg(not(target_os = "macos"))]
                         styles: vec![UserStyle {
                             id: ScriptId::from(4),
                             owner: ScriptOwner::Builtin,
@@ -7087,6 +7534,8 @@ pub fn run() {
                     },
                 ),
                 move |event| {
+                    #[cfg(feature = "adblock-qa")]
+                    blocker_bench::engine_event(&event);
                     #[cfg(all(feature = "macos-work-retained-controller-probe", target_os = "macos"))]
                     if zephium_work_composition::retained_qualification::retained_controller_policy_event(&event) { return; }
                     #[cfg(all(feature = "macos-work-resource-probe", target_os = "macos"))]
@@ -7228,13 +7677,18 @@ pub fn run() {
                     "zephium:work-changed",
                     &change,
                 ),
+                Projection::TabSwitcher { session, state } => tab_switcher::project(&emit_handle, session, state),
                 Projection::PanelOwner(owner) => overlay::update_context(&emit_handle, &owner),
                 Projection::Items(state) => {
+                    #[cfg(feature = "adblock-qa")]
+                    blocker_bench::items(&state);
                     spaces::follow(&emit_handle, &state);
                     page_assist::observe_items(&state);
                     emit_to_privileged(&emit_handle, MAIN_LABEL, EVENT_ITEMS, &state)
                 }
                 Projection::Tab(tab) => {
+                    #[cfg(feature = "adblock-qa")]
+                    blocker_bench::tab(&tab);
                     page_assist::observe_tab(&tab);
                     emit_to_privileged(&emit_handle, MAIN_LABEL, EVENT_TAB, &tab)
                 }
@@ -7393,6 +7847,22 @@ pub fn run() {
                     emit_to_privileged(&emit_handle, MAIN_LABEL, EVENT_LAYOUT, &layout)
                 }
                 Projection::HostFullscreen(active) => content_fullscreen::follow(&emit_handle, active),
+                Projection::RaiseWindow => {
+                    let app = emit_handle.clone();
+                    let _ = emit_handle.run_on_main_thread(move || {
+                        let Some(main) = app.get_webview_window(MAIN_LABEL) else {
+                            return;
+                        };
+                        #[cfg(target_os = "macos")]
+                        panel::raise(&main);
+                        #[cfg(not(target_os = "macos"))]
+                        {
+                            let _ = main.unminimize();
+                            let _ = main.show();
+                            let _ = main.set_focus();
+                        }
+                    });
+                }
                 Projection::RuntimeStatus(status) => {
                     emit_to_privileged(&emit_handle, MAIN_LABEL, EVENT_RUNTIME_STATUS, &status)
                 }
@@ -7406,6 +7876,8 @@ pub fn run() {
                     emit_to_privileged(&emit_handle, MAIN_LABEL, EVENT_FOCUS, &status)
                 }
                 Projection::OperationProcessed(disposition) => {
+                    #[cfg(feature = "adblock-qa")]
+                    blocker_bench::operation_processed(&disposition);
                     let panel_result=disposition.clone();
                     if record_and_deliver_operation(&disposition_ledger,disposition,|disposition| {
                         work_product::preference_processed(&emit_handle, disposition);
@@ -7417,6 +7889,8 @@ pub fn run() {
                     }
                 }
                 Projection::Profiles(view) => {
+                    #[cfg(feature = "adblock-qa")]
+                    blocker_bench::profiles(&view);
                     private_window::follow(&emit_handle, &view);
                     emit_to_privileged(&emit_handle, MAIN_LABEL, "zephium:profiles", &view)
                 }
@@ -7434,6 +7908,7 @@ pub fn run() {
                 let engine=engine.clone();
                 Arc::new(move |rules,done|zephium_core::ports::engine::Engine::validate_content_rules(engine.as_ref(),rules,done))
             };
+            engine.retain_content_rule_cache_digests(blocker_service::cached_webkit_digests(&data_dir));
             let blocker = blocker_service::start_with_updates(&data_dir,native_validation).map_err(|error| {
                 std::io::Error::other(format!(
                     "failed to start managed content-policy service: {error}"
@@ -7578,6 +8053,10 @@ pub fn run() {
             navigation_probe::install(app.handle())?;
             #[cfg(feature = "macos-work-public-inspection")]
             work_development::install(app.handle())?;
+            // Before admission: the shell's one profile projection can come
+            // right after it, and the driver waits on that projection.
+            #[cfg(feature = "adblock-qa")]
+            blocker_bench::start(app.handle(), &engine)?;
             if !startup_engine.transfer_to(&engine) {
                 return Err(std::io::Error::other(
                     "startup engine ownership did not transfer to the shell",
@@ -7627,6 +8106,8 @@ pub fn run() {
 
             let resize_shell = shell.clone();
             let resize_window = window.clone();
+            #[cfg(target_os = "windows")]
+            let focus_engine = engine.clone();
             let exit_handle = handle.clone();
             let window_shutdown = shutdown.inner().clone();
             window.on_window_event(move |event| {
@@ -7745,6 +8226,8 @@ pub fn run() {
                         resize_shell.dispatch(Command::SetWindowVisible(true));
                         #[cfg(target_os = "windows")]
                         platform::imp::set_chrome_minimized(&resize_window, false);
+                        #[cfg(target_os = "windows")]
+                        focus_engine.window_foreground();
                         presence::report_app_active(resize_window.app_handle());
                     }
                     // Losing focus alone does not make a browser tab
@@ -8007,6 +8490,9 @@ pub fn run() {
                     &error,
                 );
             }
+            #[cfg(target_os = "windows")]
+            terminate_windows_process(1);
+            #[cfg(not(target_os = "windows"))]
             std::process::exit(1);
         });
 
@@ -8018,29 +8504,45 @@ pub fn run() {
         // exact process HANDLE authorize deletion of these private UDFs. A
         // failure remains visible in the process status and quarantines the
         // generation for a later verified cleanup pass.
-        let exit_code = app.run_return(handle_run_event);
-        // Setup can fail after zero or one privileged environment exists.
-        // Every attempted build may have created native state before returning
-        // an error. Require an exact observer/PID/HANDLE proof for that
-        // conservative set; a partial registration therefore mismatches and
-        // keeps the runtime generation quarantined.
-        let expected_environments = expected_privileged_environment_labels(
-            attempted_privileged_environments.load(Ordering::Acquire),
-        );
-        let process_exit_proven =
-            platform::imp::finalize_privileged_environment_observers(&expected_environments);
-        let cleanup_succeeded = process_exit_proven && cleanup_privileged_runtime_after_exit();
-        if !process_exit_proven {
-            diagnostic!(
-                "privacy: privileged WebView2 Environment5/PID/HANDLE exit was not proven; leaving this run's UDF generation quarantined"
-            );
-        }
-        updates::finish_after_exit(cleanup_succeeded && exit_code == 0);
-        std::process::exit(if cleanup_succeeded || exit_code != 0 {
-            exit_code
-        } else {
-            1
+        app.run_return(move |app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                handle_run_event(app, event);
+                // The runtime drains its window registry before delivering Exit,
+                // including when WM_ENDSESSION is still on the native stack.
+                let expected_environments = expected_privileged_environment_labels(
+                    attempted_privileged_environments.load(Ordering::Acquire),
+                );
+                let tail_deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+                let tail_deadline = tao::event_loop::system_termination_deadline()
+                    .map_or(tail_deadline, |system| system.min(tail_deadline));
+                let (process_exit_proven, process_exit_clean) =
+                    platform::imp::finalize_privileged_environment_observers(
+                        &expected_environments,
+                        tail_deadline,
+                    );
+                let cleanup_succeeded =
+                    process_exit_proven && cleanup_privileged_runtime_after_exit();
+                let exit_code = app
+                    .try_state::<ShutdownCoordinator>()
+                    .map_or(1, |shutdown| {
+                        let code = shutdown.authorized_exit_code.load(Ordering::Acquire);
+                        if code == NO_AUTHORIZED_EXIT_CODE
+                            || shutdown.terminal_failure.load(Ordering::Acquire)
+                        {
+                            1
+                        } else {
+                            code
+                        }
+                    });
+                let clean = cleanup_succeeded && process_exit_clean && exit_code == 0;
+                updates::finish_after_exit(clean);
+                relaunch::finish_after_cleanup(app, clean);
+                app.cleanup_before_exit();
+                terminate_windows_process(if clean { 0 } else { 1 });
+            }
+            handle_run_event(app, event);
         });
+        terminate_windows_process(1);
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -8052,6 +8554,34 @@ mod frame_sources;
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn only_an_app_link_grant_names_a_scheme() {
+        use zephium_core::permissions::SitePermissionKind as Kind;
+        assert!(super::site_permission_scheme_admitted(
+            Kind::AppLinks,
+            Some("zoommtg")
+        ));
+        assert!(!super::site_permission_scheme_admitted(
+            Kind::AppLinks,
+            None
+        ));
+        assert!(!super::site_permission_scheme_admitted(
+            Kind::AppLinks,
+            Some("javascript")
+        ));
+        assert!(super::site_permission_scheme_admitted(Kind::Camera, None));
+        for scheme in ["zoommtg", "javascript", "NOT A SCHEME"] {
+            assert!(!super::site_permission_scheme_admitted(
+                Kind::Camera,
+                Some(scheme)
+            ));
+            assert!(!super::site_permission_scheme_admitted(
+                Kind::Downloads,
+                Some(scheme)
+            ));
+        }
+    }
 
     use tauri::Url;
     use zephium_ipc::{
@@ -8080,6 +8610,142 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(20)).await;
         drop(held);
         assert!(waiting.await.unwrap().is_some());
+    }
+
+    #[test]
+    fn windows_session_end_enters_coordinator_and_pumps_until_settled() {
+        let tao = include_str!("../../vendor/tao/src/platform_impl/windows/event_loop.rs");
+        let query = tao
+            .split("win32wm::WM_QUERYENDSESSION => {")
+            .nth(1)
+            .unwrap()
+            .split("win32wm::WM_ENDSESSION => {")
+            .next()
+            .unwrap();
+        assert!(query.contains("termination.request()"));
+        assert!(query.contains("ShutdownBlockReasonCreate"));
+        let end = tao
+            .split("win32wm::WM_ENDSESSION => {")
+            .nth(1)
+            .unwrap()
+            .split("_ if msg == *USER_EVENT_MSG_ID")
+            .next()
+            .unwrap();
+        assert!(end.contains("SystemTermination::wait_until"));
+        assert!(end.contains("DispatchMessageW"));
+        assert!(end.contains("ShutdownBlockReasonDestroy"));
+        let setup = include_str!("lib.rs")
+            .split(".setup(move |app|")
+            .nth(1)
+            .unwrap()
+            .split("let data_dir =")
+            .next()
+            .unwrap();
+        assert!(setup.contains("set_system_termination_handler"));
+        assert!(setup.contains("termination_owner.request("));
+    }
+
+    #[test]
+    fn macos_system_termination_defers_and_replies_after_cleanup() {
+        let delegate = include_str!("../../vendor/tao/src/platform_impl/macos/app_delegate.rs");
+        assert!(delegate.contains("sel!(applicationShouldTerminate:)"));
+        let should = delegate
+            .split("extern \"C\" fn application_should_terminate")
+            .nth(1)
+            .unwrap()
+            .split("extern \"C\" fn application_will_terminate")
+            .next()
+            .unwrap();
+        assert!(should.contains("defer_system_termination(termination.request())"));
+        assert!(should.contains("2"));
+        let state = include_str!("../../vendor/tao/src/platform_impl/macos/app_state.rs");
+        let exit = state
+            .split("pub fn exit() -> i32")
+            .nth(1)
+            .unwrap()
+            .split("pub fn launched")
+            .next()
+            .unwrap();
+        assert!(
+            exit.find("Event::LoopDestroyed").unwrap()
+                < exit
+                    .find("replyToApplicationShouldTerminate(true)")
+                    .unwrap()
+        );
+        assert!(state.contains("ControlFlow::ExitWithCode(1)"));
+    }
+
+    #[test]
+    fn windows_final_exit_flushes_logs_then_bypasses_dll_detach() {
+        let source = include_str!("lib.rs");
+        let exit = source
+            .split("fn terminate_windows_process(")
+            .nth(1)
+            .unwrap()
+            .split("impl HardExitWatchdog")
+            .next()
+            .unwrap();
+        assert!(
+            exit.find("flush_stderr_until").unwrap()
+                < exit.find("TerminateProcess(GetCurrentProcess()").unwrap()
+        );
+        assert!(!exit.contains("std::process::exit"));
+        let run = source
+            .split("app.run_return(move |app, event|")
+            .nth(1)
+            .unwrap()
+            .split("#[cfg(not(target_os = \"windows\"))]")
+            .next()
+            .unwrap();
+        assert!(
+            run.find("finalize_privileged_environment_observers")
+                .unwrap()
+                < run.find("terminate_windows_process").unwrap()
+        );
+        assert!(
+            run.find("updates::finish_after_exit(clean)").unwrap()
+                < run.find("terminate_windows_process").unwrap()
+        );
+    }
+
+    #[test]
+    fn chrome_document_replacement_lowers_sidebar_before_resetting_modal() {
+        let source = include_str!("lib.rs").split("#[cfg(test)]").next().unwrap();
+        let load = source
+            .split(".on_page_load(move |window, payload| {")
+            .nth(1)
+            .unwrap()
+            .split(".build()?")
+            .next()
+            .unwrap();
+        let reset = load.split("PageLoadEvent::Started)").nth(1).unwrap();
+        assert!(reset.contains("window.label() == MAIN_LABEL"));
+        assert!(reset.contains("shell.dispatch(Command::PeekSidebar {\n                                peek: false,\n                                slide: false,"));
+        assert!(
+            reset.find("Command::PeekSidebar").unwrap()
+                < reset.find("Command::SetChromeModal").unwrap()
+        );
+    }
+
+    #[test]
+    fn chrome_document_replacement_resets_macos_sidebar_controls() {
+        let source = include_str!("lib.rs").split("#[cfg(test)]").next().unwrap();
+        let load = source
+            .split(".on_page_load(move |window, payload| {")
+            .nth(1)
+            .unwrap()
+            .split(".build()?")
+            .next()
+            .unwrap();
+        let reset = load.split("PageLoadEvent::Started)").nth(1).unwrap();
+        assert!(reset.contains("window.label() == MAIN_LABEL"));
+        assert!(reset.contains(
+            "#[cfg(target_os = \"macos\")]\n                        platform::imp::sidebar_card_lights(&window, false);"
+        ));
+        assert!(
+            reset.find("sidebar_card_lights(&window, false)").unwrap()
+                < reset.find("try_state::<Handle>()").unwrap()
+        );
     }
 
     #[test]
@@ -8128,6 +8794,23 @@ mod tests {
         assert!(source.contains("help::url(id)"));
         assert!(source.contains("id == help::MENU"));
         assert!(source.contains("id == help::DIAGNOSTICS"));
+    }
+
+    #[test]
+    fn launcher_follows_shortcut_changes_without_unrelated_preferences() {
+        assert!(super::launcher_follows_ui_command(
+            "preference.search.shortcuts=[]"
+        ));
+        assert!(super::launcher_follows_ui_command("theme.dark"));
+        assert!(super::launcher_follows_ui_command(
+            "preference.ui.font=system"
+        ));
+        assert!(!super::launcher_follows_ui_command(
+            "preference.search.history=false"
+        ));
+        assert!(!super::launcher_follows_ui_command(
+            "preference.search.shortcuts-extra=[]"
+        ));
     }
 
     #[test]
@@ -8672,6 +9355,25 @@ mod tests {
     }
 
     #[test]
+    fn clean_shutdown_hands_watchdog_to_a_bounded_install_phase_once() {
+        let watchdog = super::HardExitWatchdog::default();
+        watchdog
+            .prepared
+            .store(true, std::sync::atomic::Ordering::Release);
+        assert!(watchdog.arm());
+        let shutdown_deadline = watchdog.deadline.lock().unwrap().unwrap();
+        watchdog.begin_install();
+        let install_deadline = watchdog.deadline.lock().unwrap().unwrap();
+        let install_phase_duration = std::time::Duration::from_secs(60);
+        let minimum_extension =
+            install_phase_duration - super::HARD_EXIT_TIMEOUT - std::time::Duration::from_secs(1);
+        assert!(install_deadline > shutdown_deadline + minimum_extension);
+        assert!(install_deadline <= std::time::Instant::now() + install_phase_duration);
+        watchdog.begin_install();
+        assert_eq!(watchdog.deadline.lock().unwrap().unwrap(), install_deadline);
+    }
+
+    #[test]
     fn hard_exit_watchdog_must_be_prepared_before_a_callback_can_arm_it() {
         let coordinator = super::ShutdownCoordinator::default();
         assert!(!coordinator.arm_hard_exit_watchdog());
@@ -8970,6 +9672,10 @@ mod tests {
             .find("window.navigate(handover.browser.clone())")
             .expect("browser navigation");
         assert!(hidden < navigated);
+        let restarted = hand_over
+            .find("restart_content_process(window)")
+            .expect("browser in a new content process");
+        assert!(hidden < restarted && restarted < navigated);
         assert!(hand_over.contains("self.serves_onboarding(window)"));
         assert!(hand_over.contains("zephium-handover-watchdog"));
 
@@ -9518,7 +10224,7 @@ mod tests {
 
         let desktop = include_str!("lib.rs");
         let run_return = desktop
-            .find("app.run_return(handle_run_event)")
+            .find("app.run_return(move |app, event|")
             .expect("returning Windows event loop");
         let process_proof = desktop
             .find("platform::imp::finalize_privileged_environment_observers")
@@ -9550,11 +10256,15 @@ mod tests {
     fn privileged_webview2_args_keep_smartscreen_and_process_sandboxes_enabled() {
         assert_eq!(
             super::PRIVILEGED_WEBVIEW2_BROWSER_ARGS,
-            "--disable-features=msWebOOUI,msPdfOOUI,SpareRendererForSitePerProcess"
+            "--disable-features=msWebOOUI,msPdfOOUI,SpareRendererForSitePerProcess \
+             --enable-features=NetworkServiceInProcess2"
         );
         let args = super::PRIVILEGED_WEBVIEW2_BROWSER_ARGS.to_ascii_lowercase();
         assert!(!args.contains("smartscreen"));
         assert!(!args.contains("no-sandbox"));
+        // WebView2 keeps only the last of a repeated feature switch.
+        assert_eq!(args.matches("--enable-features=").count(), 1);
+        assert_eq!(args.matches("--disable-features=").count(), 1);
     }
 
     #[test]
@@ -9665,6 +10375,30 @@ mod tests {
         ));
     }
 
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn onboarding_on_its_own_host_is_admitted_only_as_onboarding_and_until_handover() {
+        let onboarding = Url::parse(super::onboarding_host::URL).unwrap();
+        let browser = Url::parse("http://tauri.localhost/browser.html").unwrap();
+        let gate = super::UiStartupGate::onboarding_first(onboarding.clone(), browser.clone());
+        assert!(gate.permits_navigation(&onboarding));
+        for stranger in [
+            "http://zephium-onboarding.localhost/browser.html",
+            "http://user@zephium-onboarding.localhost/onboarding.html",
+            "http://zephium-onboarding.localhost:8080/onboarding.html",
+        ] {
+            assert!(
+                !gate.permits_navigation(&Url::parse(stranger).unwrap()),
+                "{stranger}"
+            );
+        }
+        assert!(!super::UiStartupGate::new(browser.clone()).permits_navigation(&onboarding));
+        gate.handed_over
+            .store(true, std::sync::atomic::Ordering::Release);
+        assert!(!gate.permits_navigation(&onboarding));
+        assert!(gate.permits_navigation(&browser));
+    }
+
     #[test]
     fn history_never_returns_to_onboarding_or_the_bootstrap_page() {
         #[cfg(not(target_os = "windows"))]
@@ -9769,7 +10503,7 @@ mod tests {
         assert_eq!(directive("style-src"), "'self' 'unsafe-inline'");
         assert_eq!(
             directive("img-src"),
-            "'self' data: zephium-media: http://zephium-media.localhost"
+            "'self' data: zephium-media: http://zephium-media.localhost zephium-preview: http://zephium-preview.localhost"
         );
         assert_eq!(directive("font-src"), "'self' data:");
         // Same-origin workers only: the diagram layout engine runs off the page thread.
@@ -10033,5 +10767,50 @@ mod tests {
         assert_eq!(super::appearance_code("light"), super::APPEARANCE_LIGHT);
         assert_eq!(super::appearance_code("dark"), super::APPEARANCE_DARK);
         assert_eq!(super::appearance_code("invalid"), super::APPEARANCE_SYSTEM);
+    }
+
+    fn launcher_admitted() -> zephium_ipc::OperationAdmission {
+        zephium_ipc::OperationAdmission {
+            operation_id: Some("0000000000000001".into()),
+            accepted: true,
+        }
+    }
+
+    #[test]
+    fn an_accepted_app_command_settles_the_launcher_at_admission() {
+        let (admission, settlement) = super::route_launcher_command(
+            |_| super::accepted_ui_operation(),
+            || panic!("an app command never reaches the shell"),
+        );
+        assert!(admission.accepted);
+        assert_eq!(settlement, super::LauncherSettlement::Admitted);
+    }
+
+    #[test]
+    fn an_accepted_shell_command_waits_for_its_disposition() {
+        let (admission, settlement) =
+            super::route_launcher_command(|to_shell| to_shell(), launcher_admitted);
+        assert_eq!(admission.operation_id.as_deref(), Some("0000000000000001"));
+        assert_eq!(settlement, super::LauncherSettlement::Shell);
+    }
+
+    #[test]
+    fn a_refused_app_command_leaves_the_launcher_open() {
+        let (admission, settlement) = super::route_launcher_command(
+            |_| super::rejected_operation(),
+            || panic!("a refused command never reaches the shell"),
+        );
+        assert!(!admission.accepted);
+        assert_eq!(settlement, super::LauncherSettlement::Refused);
+    }
+
+    #[test]
+    fn a_shell_refusal_is_the_shell_paths_to_settle() {
+        // `run_in_shell` already releases the launcher when the shell
+        // refuses admission; settling it again here would be a second answer.
+        let (admission, settlement) =
+            super::route_launcher_command(|to_shell| to_shell(), super::rejected_operation);
+        assert!(!admission.accepted);
+        assert_eq!(settlement, super::LauncherSettlement::Shell);
     }
 }

@@ -2,6 +2,8 @@
 mod caption;
 #[path = "windows_menus.rs"]
 mod menus;
+#[path = "windows_pointer.rs"]
+mod pointer;
 #[path = "windows_renderer.rs"]
 pub(crate) mod renderer;
 #[path = "windows_sidebar_edge.rs"]
@@ -70,8 +72,11 @@ pub fn remove_privileged_version_observer(label: &str) -> bool {
     zephium_engine::detach_privileged_environment_update(label)
 }
 
-pub fn finalize_privileged_environment_observers(expected_labels: &[&str]) -> bool {
-    zephium_engine::finalize_privileged_environment_registrations(expected_labels)
+pub fn finalize_privileged_environment_observers(
+    expected_labels: &[&str],
+    deadline: std::time::Instant,
+) -> (bool, bool) {
+    zephium_engine::finalize_privileged_environment_registrations(expected_labels, deadline)
 }
 
 /// Starts the log before anything can fail, in the folder Tauri will resolve
@@ -138,7 +143,7 @@ pub fn enforce_runtime_security_floor(
 
 #[path = "windows_log.rs"]
 mod windows_log;
-pub use windows_log::redirect_stderr;
+pub use windows_log::{flush_stderr_until, redirect_stderr};
 
 pub fn init(
     window: &WebviewWindow,
@@ -433,6 +438,10 @@ pub fn harden_privileged(
                 &environment,
                 on_runtime_update,
             )?;
+            let mut browser = 0_u32;
+            // An id left unread records nothing, which invalidates the record.
+            let _ = core.BrowserProcessId(&mut browser);
+            crate::privileged_runtime_windows::record_browser_process(browser);
             Ok(())
         })();
         if let Err(error) = result {
@@ -538,11 +547,6 @@ fn set_dark_frame(window: &WebviewWindow, dark: bool) {
     };
 }
 
-/// The browser window wears Mica Alt, the backdrop Windows 11 made for tabbed
-/// main windows: it takes the wallpaper's hue without its detail and stays
-/// put while the window is inactive. The frame lays the sky's light over it
-/// on a new tab. Acrylic is a flyout's material, so only the launcher keeps
-/// it, and Windows 10, which has no Mica, falls back to it.
 pub fn apply_material(window: &WebviewWindow, dark: bool) -> bool {
     use crate::material::Material;
     let launcher = window.label() == crate::overlay::PANEL_LABEL;
@@ -558,22 +562,32 @@ pub fn apply_material(window: &WebviewWindow, dark: bool) -> bool {
     // Use the fallible native adapter directly; the Tauri effect dispatcher
     // discards the underlying DWM error and can falsely report acrylic.
     let preference = crate::material::preference();
-    let contrast = menus::high_contrast() || preference == crate::material::Preference::None;
-    let result = if contrast {
+    let chosen = crate::material::windows_material(preference, menus::high_contrast(), launcher);
+    let clear = || {
         let _ = window_vibrancy::clear_tabbed(window);
-        window_vibrancy::clear_acrylic(window).map(|()| Material::None)
-    } else if launcher {
-        window_vibrancy::apply_acrylic(window, Some(tint)).map(|()| Material::Acrylic)
-    } else {
-        // Each backdrop replaces the other, but a Win10 fallback leaves the
-        // accent policy set, which would composite under Mica.
-        let _ = window_vibrancy::clear_acrylic(window);
-        window_vibrancy::apply_tabbed(window, Some(dark))
-            .map(|()| Material::Mica)
-            .or_else(|_| {
-                window_vibrancy::apply_acrylic(window, Some(tint)).map(|()| Material::Acrylic)
-            })
+        let _ = window_vibrancy::clear_mica(window);
+        window_vibrancy::clear_acrylic(window)
     };
+    let cleared = clear();
+    let result = match chosen {
+        Material::None => cleared.map(|()| Material::None),
+        Material::Mica => window_vibrancy::apply_mica(window, Some(dark)).map(|()| Material::Mica),
+        Material::MicaAlt => {
+            window_vibrancy::apply_tabbed(window, Some(dark)).map(|()| Material::MicaAlt)
+        }
+        _ => window_vibrancy::apply_acrylic(window, Some(tint)).map(|()| Material::Acrylic),
+    }
+    .or_else(|error| {
+        let _ = clear();
+        if matches!(chosen, Material::Mica | Material::MicaAlt) {
+            window_vibrancy::apply_acrylic(window, Some(tint)).map(|()| Material::Acrylic)
+        } else {
+            Err(error)
+        }
+    });
+    if result.is_err() {
+        let _ = clear();
+    }
     if let Err(e) = &result {
         crate::write_diagnostic(format_args!("material: window effects unavailable: {e}"));
     }
@@ -735,6 +749,12 @@ pub fn sidebar_hidden(window: &WebviewWindow, hidden: bool) {
         });
         sidebar_edge::watch(&owner, hidden);
     });
+}
+
+/// The column is this wide; the hidden sidebar's card stands round it.
+pub fn sidebar_column_width(window: &WebviewWindow, width: f64) {
+    let owner = window.clone();
+    let _ = window.run_on_main_thread(move || sidebar_edge::column_width(&owner, width));
 }
 
 pub fn make_chrome(window: &WebviewWindow, _dispatch: MainThreadDispatch) -> SharedChrome {

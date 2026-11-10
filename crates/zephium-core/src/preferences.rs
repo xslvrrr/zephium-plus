@@ -2,9 +2,11 @@
 pub const KEYS: &[&str] = &[
     "appearance",
     "search.engine",
+    "search.shortcuts",
     "search.custom-url",
     "search.suggestions",
     "sidebar.mode",
+    "sidebar.width",
     "ui.accent",
     "ui.material",
     "ui.reduce-motion",
@@ -210,10 +212,14 @@ pub fn feature_enabled(stored: impl Fn(&str) -> Option<String>, feature: &str) -
 
 pub fn value_allowed(key: &str, value: &str) -> bool {
     match key {
+        "search.shortcuts" => crate::search::ShortcutRegistry::from_setting(value).is_some(),
         "search.custom-url" => value.is_empty() || crate::search::valid_template(value),
         "search.engine" => crate::search::SearchEngine::from_id(value).is_some(),
         "appearance" => matches!(value, "system" | "light" | "dark"),
         "sidebar.mode" => matches!(value, "default" | "compact" | "hidden"),
+        "sidebar.width" => value
+            .parse::<u16>()
+            .is_ok_and(|width| (180..=460).contains(&width) && value == width.to_string()),
         "ui.accent" => matches!(
             value,
             "graphite" | "sky" | "sage" | "rose" | "amber" | "teal" | "lavender" | "orchid"
@@ -222,7 +228,7 @@ pub fn value_allowed(key: &str, value: &str) -> bool {
         // system material the system cannot install falls back on its own.
         "ui.material" => matches!(
             value,
-            "auto" | "liquid_glass" | "vibrancy" | "acrylic" | "mica" | "none"
+            "auto" | "liquid_glass" | "vibrancy" | "acrylic" | "mica" | "mica_alt" | "none"
         ),
         "ui.newtab-background" => matches!(value, "sky" | "image"),
         // An admitted local blob, never a URL or a filesystem path. The media
@@ -537,11 +543,24 @@ mod tests {
     #[test]
     fn settings_are_closed_and_values_are_bounded() {
         assert!(value_allowed("sidebar.mode", "compact"));
+        assert!(KEYS.contains(&"sidebar.width"));
+        for width in ["180", "240", "360", "460"] {
+            assert!(value_allowed("sidebar.width", width));
+        }
+        for width in [
+            "", "56", "179", "461", "NaN", "Infinity", "240.5", "0240", " 240", "+240",
+        ] {
+            assert!(!value_allowed("sidebar.width", width), "{width:?}");
+        }
         assert!(value_allowed("ui.accent", "sage"));
         assert!(value_allowed("ui.accent", "orchid"));
         assert!(!value_allowed("ui.accent", "purple"));
         assert!(value_allowed("ui.material", "vibrancy"));
         assert!(value_allowed("ui.material", "mica"));
+        assert!(value_allowed("ui.material", "mica_alt"));
+        for value in ["MicaAlt", "mica-alt", " mica_alt", "mica_alt "] {
+            assert!(!value_allowed("ui.material", value));
+        }
         assert!(!value_allowed("ui.material", "sky"));
         assert!(value_allowed("ui.newtab-clock-format", "24h"));
         assert!(value_allowed("ui.newtab-tasks", "false"));

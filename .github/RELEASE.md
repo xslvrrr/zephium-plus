@@ -47,16 +47,25 @@ existing install on its current version.
 
 ## Cutting a release
 
-1. **Refresh the blocker seed.** EasyList asks to be refreshed every four days,
-   and the release gate rejects a seed past that point, so do this right
-   before tagging:
+1. **Refresh the blocker seed.** The release gate rejects a seed whose oldest
+   list is more than 30 days old, and quick fixes changes several times a day,
+   so do this right before tagging:
 
    ```sh
-   curl -fsSL -o /tmp/easylist.txt https://easylist.to/easylist/easylist.txt
-   curl -fsSL -o /tmp/easyprivacy.txt https://easylist.to/easylist/easyprivacy.txt
-   cargo xtask update-blocker-seed --easylist /tmp/easylist.txt \
-     --easyprivacy /tmp/easyprivacy.txt \
-     --license assets/blocker-seed/v1/LICENSE-CC-BY-SA-3.0.txt
+   mkdir -p /tmp/blocker-seed && cd /tmp/blocker-seed
+   curl -fsSL -o easylist.txt https://easylist.to/easylist/easylist.txt
+   curl -fsSL -o easyprivacy.txt https://easylist.to/easylist/easyprivacy.txt
+   curl -fsSL -o ublock-filters.txt https://ublockorigin.github.io/uAssets/filters/filters.min.txt
+   curl -fsSL -o ublock-quick-fixes.txt https://ublockorigin.github.io/uAssets/filters/quick-fixes.txt
+   curl -fsSL -o ublock-link-shorteners.txt https://ublockorigin.github.io/uAssets/filters/ubo-link-shorteners.txt
+   curl -fsSL -o ublock-privacy.txt https://ublockorigin.github.io/uAssets/filters/privacy.min.txt
+   curl -fsSL -o ublock-resource-abuse.txt https://ublockorigin.github.io/uAssets/filters/resource-abuse.txt
+   curl -fsSL -o ublock-unbreak.txt https://ublockorigin.github.io/uAssets/filters/unbreak.min.txt
+   curl -fsSL -o ublock-badware.txt https://ublockorigin.github.io/uAssets/filters/badware.min.txt
+   cd -
+   cargo xtask update-blocker-seed --sources /tmp/blocker-seed \
+     --license assets/blocker-seed/v1/LICENSE-CC-BY-SA-3.0.txt \
+     --gpl-license assets/blocker-seed/v1/LICENSE-GPL-3.0.txt
    ```
 
    Then copy the new WebKit digest into the native seed probe and its policy
@@ -97,10 +106,10 @@ existing install on its current version.
 
 6. **Review the draft** once the workflow finishes. For a stable version,
    review the final assets below and use **Publish stable draft**. For a prerelease,
-   install the DMG and Windows installer and review the notes before publication. Keep "Set as the
-   latest release" checked and leave "Set as a pre-release" unchecked, even for
-   betas: `releases/latest` skips pre-releases, and both the website and the
-   updater resolve through it.
+   install the DMG and Windows installer and review the notes before publication.
+   After a stable release exists, publish betas with "Set as a pre-release"
+   checked and "Set as the latest release" unchecked: both the website and the
+   updater resolve through `releases/latest`, which skips pre-releases.
 
 To rebuild a tag (for example after a flaky runner), select the same tag in
 both **Actions → Release → Run workflow → Use workflow from** and the `tag`

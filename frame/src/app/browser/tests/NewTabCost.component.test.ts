@@ -26,7 +26,10 @@ const mode = String(import.meta.env.VITE_NEWTAB_COST ?? "");
 vi.mock("$shared/sky", async (original) => {
   const real = await original<Record<string, unknown>>();
   if (import.meta.env.VITE_NEWTAB_COST !== "bare") return real;
-  return { ...real, SCENES: { day: "", night: "" }, decode: () => new Promise<void>(() => {}) };
+  return {
+    ...real,
+    SkyPrint: (await import("./StageStub.svelte")).default,
+  };
 });
 vi.mock("$shared/ipc/bindings", async () => {
   const { mockBindings } = await import("$shared/testing/bindings");

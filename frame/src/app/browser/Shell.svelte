@@ -10,7 +10,7 @@
   // never a startup request.
   const loadNotesPage = () => import("$features/notes").then((notes) => notes.loadNotesPage());
   import LazyView from "$shared/ui/LazyView";
-  import type { TabView } from "$shared/ipc/bindings";
+  import { commands, type TabView } from "$shared/ipc/bindings";
   import { newTabImage } from "$session/newtab-background.svelte";
   import SkyLight from "./SkyLight.svelte";
   import RenderBoundary from "$shared/ui/RenderBoundary";
@@ -78,6 +78,8 @@
   import { preferences } from "$domain/preferences";
   import { Notch } from "$features/notch";
   import { holdNotch, notchMode, pinNotch, setNotchNewTab } from "$session/notch.svelte";
+  /** The new tab field's menu, kept out of the graph the launcher shares. */
+  const loadMenu = () => import("$shared/ui/Menu");
   /** New Note, from the menu or its shortcut: a note starts where notes are open. */
   async function newNote() {
     const profile = tabs.profile()?.id;
@@ -89,12 +91,16 @@
   }
   // Settings opened from a page lands on the section that page asked for.
   function openSettings() {
-    handleNativeSection("settings.section.newtab");
+    handleNativeSection("settings.section.general");
     void browserPage.open("settings");
   }
   function openAccount(intent: "account" | "credits") {
     askSettings(intent === "credits" ? "credits" : null);
     handleNativeSection("settings.section.account");
+    void browserPage.open("settings");
+  }
+  function openSearchSettings() {
+    handleNativeSection("settings.section.search");
     void browserPage.open("settings");
   }
   function openAbout() {
@@ -151,6 +157,10 @@
   let paneled = $derived(
     toolHost.activeTool() !== null || browserPage.currentPage() === "settings",
   );
+  // A tool in full keeps the same rail beside its page, under the window's
+  // own head, as Work does.
+  let toolPage = $derived(browserPage.toolPage());
+  let besideRail = $derived(paneled || toolPage);
   let incognito = $derived(tabs.profile()?.kind === "incognito");
   // rice fork: with the window controls on hover, the lights and the shape
   // toggle form one group at the window's corner while the lights are there.
@@ -232,6 +242,9 @@
   let railEssentials = $derived(
     tree.favorites.flatMap((entry) => (entry.kind === "tab" ? [entry.tab] : [])),
   );
+  // Beside a tool the rail keeps only the current tab; the switcher holds the rest.
+  let railCurrent = $derived(railTabs.filter((tab) => tab.id === tabs.activeId()));
+  const openSwitcher = () => void commands.tabSwitcherOpen().catch(() => false);
   let railClosable = $derived(
     new Set(tree.today.flatMap((entry) => (entry.kind === "tab" ? [entry.tab.id] : []))),
   );
@@ -287,6 +300,9 @@
   let newTabShown = $derived.by(() => {
     const tab = tabs.activeTab();
     if (!tab || tab.url || (tab.content ?? "web") !== "web") return false;
+    // A first load that failed stands in the pane instead, and the sky's
+    // glass over the window would wash it out.
+    if (failedPane(tab)) return false;
     return browserPage.currentPage() === null && (!tab.loading || newTabLoad === tab.id);
   });
   // Beside a new tab the window, whatever it is made of, takes on the
@@ -413,6 +429,11 @@
       if (findInPage.isOpen() && findInPage.searching() !== active) findInPage.hide();
     });
   });
+  let sidebarBody = $state<ReturnType<typeof SidebarBody>>();
+  function selectEssential(id: string) {
+    sidebarBody?.clearSelection();
+    selectTab(id);
+  }
   function selectTab(id: string) {
     if (splitting) {
       tabs.split(id);
@@ -478,8 +499,8 @@
   {#if !newTabImage() && !notched}<SkyLight shown={skyShown} />{/if}
   <Sidebar
     >{#snippet browserBody(compact)}
-      {#if compact && (inWork || paneled)}
-        {#if !inWork}{#if !notched}<AddressField {compact} />{/if}<StoreInstallRail />{/if}
+      {#if compact && (inWork || besideRail)}
+        {#if !inWork && !(toolPage && !paneled)}{#if !notched}<AddressField {compact} />{/if}<StoreInstallRail />{/if}
         {#if paneled && IS_WINDOWS}
           {#if browserPage.currentPage() === "settings"}<ModeTabs compact standalone />{/if}
           <div class="rail-search"><SidebarSearch /></div>
@@ -492,7 +513,14 @@
            new list settles in where the old one was. -->
       {#key inWork}<div class="sidebar-mode-body" data-arriving={modeSwitched}>
           {#if compact}
-            <TabRail entries={railTabs} closable={railClosable} onSelect={selectTab} />
+            <TabRail
+              entries={besideRail && !inWork ? railCurrent : railTabs}
+              closable={railClosable}
+              onSelect={selectTab}
+              switcher={besideRail && !inWork ? openSwitcher : undefined}
+              spaces={!inWork}
+              roomy={besideRail || inWork}
+            />
           {:else}
             <!--
             The switch sits above the address field because it governs the
@@ -507,7 +535,13 @@
             {#if splitting}<p class="shrink-0 px-3 pb-1 text-[12px] text-accent" aria-live="polite">
                 {m.choose_split()}
               </p>{/if}
-            <SidebarBody pinned={tree.pinned} today={tree.today} {splitting} onSelect={selectTab}>
+            <SidebarBody
+              bind:this={sidebarBody}
+              pinned={tree.pinned}
+              today={tree.today}
+              {splitting}
+              onSelect={selectTab}
+            >
               {#snippet extras()}<PinnedExtensions />{/snippet}
             </SidebarBody>
             <!-- Brief notices and downloads sit at the foot of the column, by the dock. -->
@@ -532,6 +566,7 @@
             profile={tabs.profile()?.id ?? ""}
           />{/if}<PrivateReturn compact /><UpdateNotice view="glyph" onabout={openAbout} /><Dock
           compact
+          roomy={besideRail}
           tools={!inWork}
           foot={inWork ? accountFoot : undefined}
         >
@@ -557,7 +592,7 @@
                 columns={dockColumns}
                 label={m.essentials()}
                 {splitting}
-                onSelect={selectTab}
+                onSelect={selectEssential}
                 >{#snippet essentialTile(props)}<EssentialTile {...props} />{/snippet}</TabList
               >
             </div>
@@ -579,7 +614,7 @@
                 variant="essentials"
                 label={m.essentials()}
                 {splitting}
-                onSelect={selectTab}
+                onSelect={selectEssential}
                 >{#snippet essentialTile(props)}<EssentialTile {...props} />{/snippet}</TabList
               >
             </div>
@@ -680,6 +715,8 @@
                       retryLabel={m.surface_retry()}
                       >{#snippet children(Search)}<Search
                           tabId={tabs.activeId()}
+                          {loadMenu}
+                          onsettings={openSearchSettings}
                         />{/snippet}</LazyView
                     >{/key}{/snippet}</NewTab
               >{/snippet}</LazyView

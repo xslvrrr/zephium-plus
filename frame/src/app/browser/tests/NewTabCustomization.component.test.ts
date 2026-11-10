@@ -33,9 +33,9 @@ vi.mock("$shared/sky", async (original) => {
   const real = await original<typeof import("$shared/sky")>();
   return {
     ...real,
-    decode: (scene: import("$shared/sky").Scene) => {
+    prepareSky: (scene: import("$shared/sky").Scene) => {
       native.decode(scene);
-      return real.decode(scene);
+      return real.prepareSky(scene);
     },
   };
 });
@@ -226,7 +226,7 @@ test("a missing or broken image silently restores the sky, including its materia
   expect(newTabImage()).toBeNull();
   expect(ntp.container.querySelector("[role=alert]")).toBeNull();
   expect(ntp.container.querySelector("img")).toBeNull();
-  expect(native.decode).toHaveBeenCalled();
+  await expect.poll(() => ntp.container.querySelector(".sky canvas")).not.toBeNull();
 });
 
 test("settings follow the existing dark and light surfaces", async () => {
@@ -241,4 +241,17 @@ test("settings follow the existing dark and light surfaces", async () => {
       .elementLocator(settings.container)
       .screenshot({ path: `../../../../../target/newtab/customization-${theme}.png` });
   }
+});
+
+test("a later new tab shows its printed sky as it first appears", async () => {
+  await preferences.init();
+  const first = await tab();
+  await expect
+    .poll(() => first.container.querySelector<HTMLElement>(".newtab")!.dataset.ready)
+    .toBe("true");
+  first.unmount();
+
+  const next = await tab();
+  expect(next.container.querySelector<HTMLElement>(".newtab")!.dataset.ready).toBe("true");
+  await expect.poll(() => next.container.querySelector(".sky canvas")).not.toBeNull();
 });

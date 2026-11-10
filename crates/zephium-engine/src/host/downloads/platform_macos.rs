@@ -94,6 +94,12 @@ impl Source {
         self.window.isKeyWindow() || (self.extension && self.window.isMainWindow())
     }
 
+    /// The page that started the download is still the one in the view,
+    /// whether or not the person is looking at it.
+    pub(super) fn current(&self) -> bool {
+        self.permit.active_token().is_some() && self.navigation.matches_activity(self.activity)
+    }
+
     pub(super) fn live(&self) -> bool {
         self.permit.active_token().is_some()
             && (self.initial_open || self.surface_intent.load(Ordering::Acquire))
@@ -311,9 +317,10 @@ impl Downloads {
         permit: EventPermit,
         surface_intent: Arc<AtomicBool>,
         navigation: NavigationEpochTracker,
-        native: &WKDownload,
+        request: (&WKDownload, Option<super::SiteAsk>),
         mut initial: Option<InitialDownload>,
     ) -> Option<DownloadId> {
+        let (native, ask) = request;
         if self.stopping.get()
             || self.retired.borrow().contains(&partition.profile())
             || self.active.borrow().len() >= MAX_ACTIVE_DOWNLOADS
@@ -371,10 +378,22 @@ impl Downloads {
             initial_open,
             extension: self.extension_admission.get(),
         };
-        if !source.live() || !source.in_front() {
+        if !source.live() {
             unsafe { native.cancel(None) };
             return None;
         }
+        // WebKit's word that nobody clicked. A new tab a click opened counts
+        // as that click; one an allowed site opened by itself does not.
+        // Before macOS 15.2 WebKit cannot say, and the save sheet below still
+        // asks about every such download.
+        let clicked = (initial_open && ask.as_ref().is_some_and(|ask| ask.opened_by_click))
+            || unsafe {
+                !native.respondsToSelector(objc2::sel!(isUserInitiated)) || native.isUserInitiated()
+            };
+        let subframe = unsafe {
+            native.respondsToSelector(objc2::sel!(originatingFrame))
+                && !native.originatingFrame().isMainFrame()
+        };
         let origin = unsafe {
             if native.respondsToSelector(objc2::sel!(originatingFrame)) {
                 let native_origin = native.originatingFrame().securityOrigin();
@@ -411,6 +430,25 @@ impl Downloads {
             unsafe { native.cancel(None) };
             return None;
         };
+        // A frame from another site that nobody clicked in, such as an ad,
+        // may not download at all.
+        if subframe
+            && !clicked
+            && ask
+                .as_ref()
+                .is_some_and(|ask| ask.site.as_ref().is_none_or(|site| *site != origin))
+        {
+            unsafe { native.cancel(None) };
+            return None;
+        }
+        let site = match self.site_admission(partition.profile(), ask, &origin, clicked) {
+            super::site::SiteAdmission::Refuse => {
+                unsafe { native.cancel(None) };
+                return None;
+            }
+            super::site::SiteAdmission::Open => None,
+            super::site::SiteAdmission::Hold(hold) => Some(hold),
+        };
         let Some(mtm) = MainThreadMarker::new() else {
             unsafe { native.cancel(None) };
             return None;
@@ -437,6 +475,7 @@ impl Downloads {
             identity: None,
             writer: None,
             writer_released: false,
+            insecure: false,
         };
         self.active.borrow_mut().insert(
             id,
@@ -450,6 +489,7 @@ impl Downloads {
                 destination: None,
                 panel: None,
                 panel_lease: None,
+                picker_preferences: None,
                 on_started: initial
                     .as_mut()
                     .and_then(|context| context.on_started.take()),
@@ -461,6 +501,8 @@ impl Downloads {
                 name: None,
                 resume: None,
                 resuming: false,
+                site,
+                confirmed: false,
                 deadline: DecisionDeadline::new(DecisionPhase::Admission, Instant::now()),
             },
         );
@@ -481,7 +523,14 @@ impl Downloads {
         native: &WKDownload,
     ) -> Option<DownloadId> {
         self.extension_admission.set(true);
-        let id = self.admit(partition, permit, surface_intent, navigation, native, None);
+        let id = self.admit(
+            partition,
+            permit,
+            surface_intent,
+            navigation,
+            (native, None),
+            None,
+        );
         self.extension_admission.set(false);
         id
     }
@@ -558,6 +607,15 @@ impl Downloads {
             };
             transfer.record.filename = name;
             transfer.record.total = u64::try_from(response.expectedContentLength()).ok();
+            // The response's own address, after every redirect. One that is
+            // missing, too long or unreadable is held as insecure.
+            transfer.record.insecure = is_insecure_response(
+                response
+                    .URL()
+                    .and_then(|url| url.absoluteString())
+                    .and_then(|url| bounded(&url, 8192))
+                    .as_deref(),
+            );
             let completion = completion.copy();
             transfer.destination_reply = Some(DestinationReply::new(move |path| {
                 let url = path.and_then(|path| {
@@ -570,10 +628,11 @@ impl Downloads {
             }));
             transfer.partition
         };
-        if let Some(preferences) = self.preferences.borrow().get(&partition.profile()).cloned() {
-            self.choose_destination(id, preferences);
+        let cached = self.preferences.borrow().get(&partition.profile()).cloned();
+        if let Some(preferences) = cached {
+            self.decide(id, preferences);
         } else if matches!(partition, Partition::Ephemeral(_)) {
-            self.choose_destination(id, DownloadPreferences::default());
+            self.decide(id, DownloadPreferences::default());
         } else {
             self.work.set(self.work.get() + 1);
             let sender = self.sender.clone();
@@ -598,23 +657,32 @@ impl Downloads {
     ) {
         let context = {
             let active = self.active.borrow();
-            active.get(&id).and_then(|transfer| {
-                transfer.source.as_ref().map(|source| {
-                    (
-                        source.live(),
-                        source.in_front(),
-                        source.window.clone(),
-                        transfer.record.filename.clone(),
-                        transfer.record.source.clone(),
-                        unsafe {
-                            transfer
-                                .native
-                                .respondsToSelector(objc2::sel!(isUserInitiated))
-                                && transfer.native.isUserInitiated()
-                        },
-                    )
+            active
+                .get(&id)
+                .filter(|transfer| {
+                    transfer.record.state == DownloadState::Pending
+                        && !transfer.cancelling
+                        && !transfer.authorized
+                        && transfer.panel.is_none()
                 })
-            })
+                .and_then(|transfer| {
+                    transfer.source.as_ref().map(|source| {
+                        (
+                            source.live(),
+                            source.in_front(),
+                            source.window.clone(),
+                            transfer.record.filename.clone(),
+                            transfer.record.source.clone(),
+                            transfer.confirmed
+                                || unsafe {
+                                    transfer
+                                        .native
+                                        .respondsToSelector(objc2::sel!(isUserInitiated))
+                                        && transfer.native.isUserInitiated()
+                                },
+                        )
+                    })
+                })
         };
         let Some((true, in_front, window, filename, source, user_initiated)) = context else {
             self.cancel(id, None);
@@ -641,7 +709,7 @@ impl Downloads {
             return;
         }
         if window.attachedSheet().is_some() || !in_front {
-            self.cancel(id, Some(DownloadError::Capacity));
+            self.defer_destination(id, preferences);
             return;
         }
         let Some(mtm) = MainThreadMarker::new() else {
@@ -649,7 +717,7 @@ impl Downloads {
             return;
         };
         let Some(lease) = PanelLease::acquire() else {
-            self.cancel(id, Some(DownloadError::Capacity));
+            self.defer_destination(id, preferences);
             return;
         };
         let panel = NSSavePanel::savePanel(mtm);
@@ -661,14 +729,20 @@ impl Downloads {
             panel.setDirectoryURL(Some(&NSURL::fileURLWithPath(&NSString::from_str(&path))));
         }
         let live = self.active.borrow().get(&id).is_some_and(|transfer| {
-            !transfer.cancelling
-                && transfer
-                    .source
-                    .as_ref()
-                    .is_some_and(|source| source.live() && source.in_front())
+            !transfer.cancelling && transfer.source.as_ref().is_some_and(|source| source.live())
         });
-        if !live || window.attachedSheet().is_some() {
+        if !live {
             self.cancel(id, Some(DownloadError::Unavailable));
+            return;
+        }
+        if window.attachedSheet().is_some()
+            || !self
+                .active
+                .borrow()
+                .get(&id)
+                .is_some_and(|transfer| transfer.source.as_ref().is_some_and(Source::in_front))
+        {
+            self.defer_destination(id, preferences);
             return;
         }
         if let Some(transfer) = self.active.borrow_mut().get_mut(&id) {
@@ -676,7 +750,7 @@ impl Downloads {
             transfer.panel_lease = Some(lease);
             // A person may browse the filesystem for longer than a network
             // callback deadline. Lifetime revocation still applies each tick.
-            transfer.deadline = DecisionDeadline::new(DecisionPhase::NativePicker, Instant::now());
+            transfer.deadline = transfer.deadline.waiting_for_picker(Instant::now());
         }
         let weak = Rc::downgrade(self);
         let selected_panel = panel.clone();
