@@ -338,7 +338,8 @@
     stroke-width: 1;
   }
 
-  /* Cut into the page, the page's own edge is the notch's outline. */
+  /* Cut into the page, the page's own edge is the notch's outline: native
+     draws the page's hairline along the cut (`page_notch.rs`). */
   [data-rice-notch][data-cut] .notch-edge {
     display: none;
   }

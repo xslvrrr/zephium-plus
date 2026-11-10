@@ -74,6 +74,13 @@ pub(crate) fn follow(key: &str, value: &str) -> bool {
     KEYS.contains(&key)
 }
 
+/// rice fork: whether the person asked for transparent pages, as last
+/// projected. The window's automatic material follows it (`material.rs`).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub(crate) fn page_transparency() -> bool {
+    setting("ui.page-transparency").as_deref() == Some("true")
+}
+
 /// Page transparency needs a window material to show through; over the
 /// Solid tier it is off.
 pub(crate) fn settings() -> Settings {

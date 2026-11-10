@@ -26,6 +26,14 @@ struct RiceTheme {
     window_controls: Option<String>,
     page_transparency: Option<bool>,
     site_styles: Option<bool>,
+    /// The rice's `blur.window`: 0 paints the window flat at `window_alpha`
+    /// with nothing blurred behind it, as the rest of the rice is; any other
+    /// value keeps the system's blurred material.
+    window_blur: Option<f64>,
+    /// The flat paint's opacity in percent.
+    window_alpha: Option<u8>,
+    /// `#rrggbb` for the flat paint; `""` uses the theme's ground.
+    window_color: Option<String>,
     /// Fields this build does not know, kept only to name them in the log.
     #[serde(flatten)]
     unknown: BTreeMap<String, serde_json::Value>,
@@ -243,6 +251,15 @@ fn apply(shell: &Handle, path: &Path, memo: &mut Option<TextureMemo>) {
     }
     if let Some(on) = theme.page_transparency {
         set(shell, "ui.page-transparency", on.to_string());
+    }
+    if let Some(blur) = theme.window_blur {
+        set(shell, "ui.window-blur", (blur > 0.0).to_string());
+    }
+    if let Some(alpha) = theme.window_alpha {
+        set(shell, "ui.window-alpha", alpha.to_string());
+    }
+    if let Some(color) = theme.window_color {
+        set(shell, "ui.window-color", color.to_ascii_lowercase());
     }
     if let Some(on) = theme.site_styles {
         set(shell, "site-styles.enabled", on.to_string());

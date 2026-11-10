@@ -7353,6 +7353,16 @@ pub fn run() {
                         if site_styles::follow(key, value) {
                             zephium_engine::refresh_site_styles();
                         }
+                        // rice fork: the automatic material follows page
+                        // transparency (`material::macos::install`).
+                        #[cfg(target_os = "macos")]
+                        if key == "ui.page-transparency" {
+                            reinstall_native_materials(&emit_handle);
+                            let app = emit_handle.clone();
+                            let _ = emit_handle.run_on_main_thread(move || {
+                                platform::imp::rice_backdrop::refresh_all(&app);
+                            });
+                        }
                     }
                     #[cfg(all(unix, feature = "work-product"))]
                     if let Some(value) = id.strip_prefix("preference.mcp.enabled=") {

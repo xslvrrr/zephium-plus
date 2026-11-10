@@ -6,13 +6,16 @@
 //! on that ground. Whatever the page has beneath the hole is not shown; that
 //! is the look. The hole is a mask on the stage's layer, so every pane in it
 //! is cut alike, and it slides in and out with the chrome's notch on the
-//! same curve.
+//! same curve. The cut carries the page's own hairline, so a page whose edge
+//! shows has it round the notch too. Up and settled, there is no mask.
 
+use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::ClassType;
-use objc2_app_kit::{NSBezierPath, NSView, NSWorkspace};
-use objc2_foundation::{ns_string, NSPoint, NSRect, NSSize};
+use objc2_app_kit::{NSBezierPath, NSColor, NSView, NSWorkspace};
+use objc2_core_graphics::CGPath;
+use objc2_foundation::{ns_string, NSCopying, NSPoint, NSRect, NSSize, NSString};
 use objc2_quartz_core::{
     kCAFillRuleEvenOdd, CABasicAnimation, CALayer, CAMediaTiming, CAMediaTimingFunction,
     CAShapeLayer, CATransaction,
@@ -43,11 +46,15 @@ const K: f64 = 0.552_284_75;
 
 /// Applies `notch` to the stage's layer: a mask with the hole, moved there
 /// from wherever the last one is when `animate`; none takes the mask away.
+///
+/// A mask renders everything under it offscreen on every frame WindowServer
+/// composes the page, so the mask stands only while the notch is down or
+/// sliding: up and settled, the page has none.
 pub(crate) fn place(stage: &NSView, notch: Option<PageNotch>, animate: bool) {
     let Some(layer) = stage.layer() else {
         return;
     };
-    let Some(notch) = notch.filter(|notch| {
+    let notch = notch.filter(|notch| {
         [
             notch.left,
             notch.width,
@@ -57,60 +64,172 @@ pub(crate) fn place(stage: &NSView, notch: Option<PageNotch>, animate: bool) {
         ]
         .iter()
         .all(|value| value.is_finite())
-    }) else {
-        // SAFETY: main-thread layer mutation.
-        unsafe { layer.setMask(None) };
-        return;
-    };
-    let Some(path) = outline(stage, &layer, notch) else {
-        unsafe { layer.setMask(None) };
-        return;
-    };
-    let mask = layer
+    });
+    let current = layer
         .mask()
-        .and_then(|mask| mask.downcast::<CAShapeLayer>().ok())
-        .unwrap_or_else(|| {
+        .and_then(|mask| mask.downcast::<CAShapeLayer>().ok());
+    let Some((notch, cut)) = notch.and_then(|notch| Some((notch, outline(stage, &layer, notch)?)))
+    else {
+        unmask(&layer);
+        return;
+    };
+    let moving =
+        animate && !NSWorkspace::sharedWorkspace().accessibilityDisplayShouldReduceMotion();
+    if !notch.down && !(moving && current.is_some()) {
+        unmask(&layer);
+        return;
+    }
+    let (mask, edge) = match (current, edge_of(&layer)) {
+        (Some(mask), Some(edge)) => (mask, edge),
+        _ => {
+            unmask(&layer);
             let mask = CAShapeLayer::layer();
             // SAFETY: a framework constant.
             mask.setFillRule(unsafe { kCAFillRuleEvenOdd });
             // SAFETY: main-thread layer mutation; the mask is the layer's own.
             unsafe { layer.setMask(Some(mask.as_super())) };
-            mask
-        });
+            let edge = CAShapeLayer::layer();
+            edge.setName(Some(edge_name()));
+            edge.setFillColor(None);
+            // The page's own hairline (`native::round_page`): a 1 pt line
+            // inside the page; the mask takes the stroke's outer half.
+            edge.setStrokeColor(Some(&NSColor::colorWithWhite_alpha(1.0, 0.09).CGColor()));
+            edge.setLineWidth(2.0);
+            edge.setZPosition(1_000.0);
+            layer.addSublayer(&edge);
+            (mask, edge)
+        }
+    };
     CATransaction::begin();
     CATransaction::setDisableActions(true);
     mask.setFrame(layer.bounds());
+    // The page draws its own hairline along its top edge; where the cut's
+    // flares run into that edge the two would lie on each other and read
+    // twice as bright. The cut's line stops short of the top 1 pt band and
+    // leaves it to the page's. A rectangular clip, so no offscreen pass.
+    let bounds = layer.bounds();
+    let band = 1.0_f64.min(bounds.size.height);
+    let clip = NSRect::new(
+        NSPoint::new(
+            bounds.origin.x,
+            bounds.origin.y
+                + if layer.contentsAreFlipped() {
+                    band
+                } else {
+                    0.0
+                },
+        ),
+        NSSize::new(bounds.size.width, bounds.size.height - band),
+    );
+    edge.setFrame(clip);
+    edge.setBounds(clip);
+    edge.setMasksToBounds(true);
     // SAFETY: a main-thread read of the mask's in-flight rendering state.
     let shown = unsafe { mask.presentationLayer() }
         .and_then(|shown| shown.downcast::<CAShapeLayer>().ok())
         .and_then(|shown| shown.path())
-        .or_else(|| mask.path());
-    let cg = path.CGPath();
-    mask.setPath(Some(&cg));
+        .or_else(|| mask.path())
+        .or_else(|| {
+            // Newly made for a notch coming down: it slides from up.
+            let up = PageNotch {
+                down: false,
+                ..notch
+            };
+            outline(stage, &layer, up).map(|(hole, _)| hole.CGPath())
+        });
+    let (hole, line) = cut;
+    let hole = hole.CGPath();
+    let line = line.CGPath();
+    // SAFETY: a main-thread read of the hairline's in-flight rendering state.
+    let from_line = unsafe { edge.presentationLayer() }
+        .and_then(|shown| shown.downcast::<CAShapeLayer>().ok())
+        .and_then(|shown| shown.path())
+        .or_else(|| edge.path());
+    mask.setPath(Some(&hole));
+    edge.setPath(Some(&line));
     mask.removeAnimationForKey(ns_string!("rice-notch"));
-    if animate && !NSWorkspace::sharedWorkspace().accessibilityDisplayShouldReduceMotion() {
-        if let Some(from) = shown {
+    edge.removeAnimationForKey(ns_string!("rice-notch"));
+    if !notch.down {
+        // Once up, the mask goes, unless the notch has since moved again.
+        let target = layer.clone();
+        let placed = hole.clone();
+        let done = RcBlock::new(move || {
+            let still = target
+                .mask()
+                .and_then(|mask| mask.downcast::<CAShapeLayer>().ok())
+                .and_then(|mask| mask.path())
+                .is_some_and(|path| std::ptr::eq(&*path, &*placed));
+            if still {
+                unmask(&target);
+            }
+        });
+        // SAFETY: the block runs on the main thread, with the transaction.
+        unsafe { CATransaction::setCompletionBlock(Some(&done)) };
+    }
+    if moving {
+        let slide = |from: &CGPath, to: &CGPath| {
             let animation = CABasicAnimation::animationWithKeyPath(Some(ns_string!("path")));
             // SAFETY: a CGPath is the value Core Animation expects for `path`.
             unsafe {
-                animation.setFromValue(Some(&*(Retained::as_ptr(&from).cast::<AnyObject>())));
-                animation.setToValue(Some(&*(Retained::as_ptr(&cg).cast::<AnyObject>())));
+                animation.setFromValue(Some(&*(std::ptr::from_ref(from).cast::<AnyObject>())));
+                animation.setToValue(Some(&*(std::ptr::from_ref(to).cast::<AnyObject>())));
             }
             animation.setDuration(SECONDS);
             animation.setTimingFunction(Some(&CAMediaTimingFunction::functionWithControlPoints(
                 0.22, 1.0, 0.36, 1.0,
             )));
-            mask.addAnimation_forKey(&animation, Some(ns_string!("rice-notch")));
+            animation
+        };
+        if let Some(from) = shown {
+            mask.addAnimation_forKey(&slide(&from, &hole), Some(ns_string!("rice-notch")));
+        }
+        let from_line = from_line.or_else(|| {
+            let up = PageNotch {
+                down: false,
+                ..notch
+            };
+            outline(stage, &layer, up).map(|(_, line)| line.CGPath())
+        });
+        if let Some(from) = from_line {
+            edge.addAnimation_forKey(&slide(&from, &line), Some(ns_string!("rice-notch")));
         }
     }
     CATransaction::commit();
+}
+
+/// The hairline along the cut, named so a later placement finds it.
+fn edge_name() -> &'static NSString {
+    ns_string!("rice-notch-edge")
+}
+
+fn edge_of(layer: &CALayer) -> Option<Retained<CAShapeLayer>> {
+    // SAFETY: a main-thread read of the layer's own sublayers.
+    let sublayers = unsafe { layer.sublayers() }?;
+    sublayers.iter().find_map(|sublayer| {
+        (sublayer.name().as_deref() == Some(edge_name()))
+            .then(|| sublayer.downcast::<CAShapeLayer>().ok())
+            .flatten()
+    })
+}
+
+/// No cut: no mask, and no hairline along it.
+fn unmask(layer: &CALayer) {
+    // SAFETY: main-thread layer mutation.
+    unsafe { layer.setMask(None) };
+    if let Some(edge) = edge_of(layer) {
+        edge.removeFromSuperlayer();
+    }
 }
 
 /// The stage's whole area, far past its edges so a resize never shows its
 /// border, with the hole taken out of it (even-odd). Up, the hole waits
 /// wholly above the page's edge, so the shape keeps the same points and a
 /// slide between the two moves it rather than reshaping it.
-fn outline(stage: &NSView, layer: &CALayer, notch: PageNotch) -> Option<Retained<NSBezierPath>> {
+fn outline(
+    stage: &NSView,
+    layer: &CALayer,
+    notch: PageNotch,
+) -> Option<(Retained<NSBezierPath>, Retained<NSBezierPath>)> {
     let window = stage.window()?;
     let content = window.contentView()?;
     let frame = stage.convertRect_toView(stage.bounds(), None);
@@ -142,11 +261,9 @@ fn outline(stage: &NSView, layer: &CALayer, notch: PageNotch) -> Option<Retained
         NSPoint::new(x, if flipped { y } else { h - y })
     };
 
+    // The hole's own outline, open along the page's top edge; the mask is
+    // the stage's whole area with it taken out.
     let path = NSBezierPath::bezierPath();
-    path.appendBezierPathWithRect(NSRect::new(
-        NSPoint::new(-w, -h),
-        NSSize::new(3.0 * w, 3.0 * h),
-    ));
     let curve = |to: NSPoint, c1: NSPoint, c2: NSPoint| {
         path.curveToPoint_controlPoint1_controlPoint2(to, c1, c2);
     };
@@ -170,6 +287,12 @@ fn outline(stage: &NSView, layer: &CALayer, notch: PageNotch) -> Option<Retained
         at(right, f - K * f),
         at(right + f - K * f, 0.0),
     );
+    let line = path.copy();
     path.closePath();
-    Some(path)
+    let hole = NSBezierPath::bezierPathWithRect(NSRect::new(
+        NSPoint::new(-w, -h),
+        NSSize::new(3.0 * w, 3.0 * h),
+    ));
+    hole.appendBezierPath(&path);
+    Some((hole, line))
 }

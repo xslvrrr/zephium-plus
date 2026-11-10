@@ -25,13 +25,18 @@ use objc2_app_kit::NSColor;
 use objc2_foundation::{ns_string, NSArray, NSNumber, NSObjectNSKeyValueCoding, NSString};
 use objc2_web_kit::{WKContentWorld, WKUserContentController, WKWebView};
 
-/// `_WKUserStyleLevel`: author, so `!important` rules beat the page's own.
+/// `_WKUserStyleLevel`. Each style is added at both: at the user level its
+/// `!important` rules beat the page's own `!important` rules (YouTube's
+/// `html[dark] { background-color: … !important }`, which an author-level
+/// copy loses on document order), as Zen Internet's sheets do in Firefox;
+/// the author copy keeps its plain rules over the page's plain ones.
+const USER: isize = 0;
 const AUTHOR: isize = 1;
 
 struct Sheet {
     host: String,
     css: String,
-    object: Retained<AnyObject>,
+    objects: Vec<Retained<AnyObject>>,
 }
 
 /// One Browse page's sheets. Created before the view exists, so the
@@ -80,7 +85,7 @@ fn controller(view: &WKWebView) -> Option<Retained<WKUserContentController>> {
     }
 }
 
-fn create(host: &str, css: &str) -> Option<Retained<AnyObject>> {
+fn create(host: &str, css: &str, level: isize) -> Option<Retained<AnyObject>> {
     let mtm = MainThreadMarker::new()?;
     let Some(class) = AnyClass::get(c"_WKUserStyleSheet") else {
         unavailable();
@@ -108,7 +113,7 @@ fn create(host: &str, css: &str) -> Option<Retained<AnyObject>> {
             includeMatchPatternStrings: &*include,
             excludeMatchPatternStrings: std::ptr::null::<NSArray<NSString>>(),
             baseURL: std::ptr::null::<AnyObject>(),
-            level: AUTHOR,
+            level: level,
             contentWorld: &*world
         ]
     }
@@ -154,9 +159,7 @@ impl PageSheets {
         if let Some(view) = self.view() {
             if let Some(controller) = controller(&view) {
                 for sheet in self.sheets.take() {
-                    // SAFETY: checked by `controller`.
-                    let _: () =
-                        unsafe { msg_send![&controller, _removeUserStyleSheet: &*sheet.object] };
+                    remove(&controller, &sheet);
                 }
             }
         }
@@ -191,9 +194,7 @@ impl PageSheets {
                 *host == sheet.host && style.as_ref().is_some_and(|(css, _)| *css == sheet.css)
             });
             if !keep {
-                // SAFETY: checked by `controller`.
-                let _: () =
-                    unsafe { msg_send![&controller, _removeUserStyleSheet: &*sheet.object] };
+                remove(&controller, sheet);
             }
             keep
         });
@@ -204,15 +205,22 @@ impl PageSheets {
             if sheets.iter().any(|sheet| sheet.host == *host) {
                 continue;
             }
-            if let Some(object) = create(host, css) {
-                // SAFETY: checked by `controller`.
-                let _: () = unsafe { msg_send![&controller, _addUserStyleSheet: &*object] };
-                sheets.push(Sheet {
-                    host: host.clone(),
-                    css: css.clone(),
-                    object,
-                });
+            let objects: Vec<Retained<AnyObject>> = [USER, AUTHOR]
+                .into_iter()
+                .filter_map(|level| create(host, css, level))
+                .collect();
+            if objects.is_empty() {
+                continue;
             }
+            for object in &objects {
+                // SAFETY: checked by `controller`.
+                let _: () = unsafe { msg_send![&controller, _addUserStyleSheet: &**object] };
+            }
+            sheets.push(Sheet {
+                host: host.clone(),
+                css: css.clone(),
+                objects,
+            });
         }
         drop(sheets);
         let committed = self.committed.borrow().clone();
@@ -224,6 +232,13 @@ impl PageSheets {
         if transparent != self.transparent.replace(transparent) {
             set_transparent(&view, transparent);
         }
+    }
+}
+
+fn remove(controller: &WKUserContentController, sheet: &Sheet) {
+    for object in &sheet.objects {
+        // SAFETY: checked by `controller`.
+        let _: () = unsafe { msg_send![controller, _removeUserStyleSheet: &**object] };
     }
 }
 

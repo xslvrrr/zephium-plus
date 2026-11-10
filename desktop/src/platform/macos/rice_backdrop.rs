@@ -172,10 +172,13 @@ pub fn install(window: &WebviewWindow) {
     let backdrop = RiceBackdrop::new(mtm, content.bounds());
     // Only a direct subview is a valid anchor; `viewWithTag:` would also
     // search inside the webviews.
-    let material = content
-        .subviews()
-        .iter()
-        .find(|view| MATERIAL_TAGS.contains(&view.tag()));
+    let material = content.subviews().iter().find(|view| {
+        use objc2_app_kit::NSUserInterfaceItemIdentification;
+        MATERIAL_TAGS.contains(&view.tag())
+            || view
+                .identifier()
+                .is_some_and(|id| id.to_string() == crate::material::PAINT_ID)
+    });
     match material {
         Some(material) => content.addSubview_positioned_relativeTo(
             &backdrop,

@@ -76,6 +76,9 @@ pub const KEYS: &[&str] = &[
     "mcp.enabled",
     "mcp.allowed",
     "ui.page-transparency",
+    "ui.window-blur",
+    "ui.window-alpha",
+    "ui.window-color",
     "site-styles.enabled",
     "site-styles.force",
     "site-styles.auto-update",
@@ -235,6 +238,7 @@ pub fn value_allowed(key: &str, value: &str) -> bool {
         "ui.window-controls" => matches!(value, "shown" | "hover"),
         // rice fork: page transparency and Zen Internet's site styles.
         "ui.page-transparency"
+        | "ui.window-blur"
         | "site-styles.enabled"
         | "site-styles.force"
         | "site-styles.auto-update"
@@ -246,6 +250,18 @@ pub fn value_allowed(key: &str, value: &str) -> bool {
             value.is_empty()
                 || (value.len() == 64
                     && value
+                        .bytes()
+                        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+        }
+        // rice fork: the window painted flat, with nothing blurred behind it.
+        "ui.window-alpha" => value
+            .parse::<u8>()
+            .is_ok_and(|alpha| alpha <= 100 && value == alpha.to_string()),
+        "ui.window-color" => {
+            value.is_empty()
+                || (value.len() == 7
+                    && value.starts_with('#')
+                    && value[1..]
                         .bytes()
                         .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
         }

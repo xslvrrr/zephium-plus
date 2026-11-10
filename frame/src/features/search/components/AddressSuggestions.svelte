@@ -44,9 +44,11 @@
   );
 
   $effect(() => surface.setList(list));
+  // Tracked, as New Tab's is: the completion arrives with native's answer,
+  // after the keystroke, and reading it here is what applies it then.
   $effect(() => {
     void surface.query;
-    untrack(() => surface.applyCompletion(input));
+    surface.applyCompletion(input);
   });
   // The field says which row its words stand for, for assistive technology.
   $effect(() => {

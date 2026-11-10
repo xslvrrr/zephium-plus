@@ -64,6 +64,10 @@ struct Theme {
     level: Option<u8>,
     contrast: Option<bool>,
     tint: Option<u8>,
+    /// rice fork: `ui.window-blur`, `ui.window-alpha`, `ui.window-color`.
+    blur: Option<bool>,
+    alpha: Option<u8>,
+    color: Option<String>,
 }
 
 static THEME: std::sync::Mutex<Theme> = std::sync::Mutex::new(Theme {
@@ -72,6 +76,9 @@ static THEME: std::sync::Mutex<Theme> = std::sync::Mutex::new(Theme {
     level: None,
     contrast: None,
     tint: None,
+    blur: None,
+    alpha: None,
+    color: None,
 });
 
 /// Takes a projected preference. True when it changes what native paints.
@@ -83,9 +90,44 @@ pub fn theme_changed(key: &str, value: &str) -> bool {
         "ui.theme-contrast" => theme.level = value.parse().ok(),
         "ui.contrast" => theme.contrast = Some(value == "true"),
         "ui.window-tint" => theme.tint = Some(value.parse().unwrap_or(0)),
+        "ui.window-blur" => theme.blur = Some(value != "false"),
+        "ui.window-alpha" => theme.alpha = value.parse().ok(),
+        "ui.window-color" => theme.color = Some(value.to_owned()),
         _ => return false,
     }
     true
+}
+
+/// rice fork: the flat paint the window wears in place of a blurred
+/// material, as RGBA, or nothing while blur is on. The rice paints window
+/// bodies at a set opacity with nothing behind them blurred; that also
+/// spares WindowServer every blur pass behind a transparent page.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn paint(light: bool) -> Option<(u8, u8, u8, u8)> {
+    let (blur, alpha, color) = {
+        let theme = THEME.lock().unwrap_or_else(|e| e.into_inner());
+        (theme.blur, theme.alpha, theme.color.clone())
+    };
+    let blur =
+        blur.unwrap_or_else(|| crate::app_setting("ui.window-blur").as_deref() != Some("false"));
+    if blur {
+        return None;
+    }
+    let alpha = alpha
+        .or_else(|| crate::app_setting("ui.window-alpha").and_then(|value| value.parse().ok()))
+        .unwrap_or(50)
+        .min(100);
+    let color = color.or_else(|| crate::app_setting("ui.window-color"));
+    let hex = |text: &str| -> Option<[u8; 3]> {
+        let hex = text.strip_prefix('#').filter(|hex| hex.len() == 6)?;
+        let channel = |i: usize| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok();
+        Some([channel(0)?, channel(2)?, channel(4)?])
+    };
+    let [r, g, b] = color
+        .as_deref()
+        .and_then(hex)
+        .unwrap_or_else(|| ground(light));
+    Some((r, g, b, (f64::from(alpha) * 2.55).round() as u8))
 }
 
 /// The theme's chrome rung, which is the window's ground when it is solid,
@@ -251,6 +293,62 @@ mod macos {
         effect.addSubview(&wash);
     }
 
+    /// rice fork: the flat paint's view, named so it can be found again.
+    pub const PAINT_ID: &str = "rice-window-paint";
+
+    fn paint_views(content: &NSView) -> Vec<Retained<NSView>> {
+        use objc2_app_kit::NSUserInterfaceItemIdentification;
+        content
+            .subviews()
+            .iter()
+            .filter(|view| {
+                view.identifier()
+                    .is_some_and(|id| id.to_string() == PAINT_ID)
+            })
+            .collect()
+    }
+
+    fn clear_paint(window: &WebviewWindow) {
+        let Ok(pointer) = window.ns_view() else {
+            return;
+        };
+        // SAFETY: Tao's live content view, borrowed on the main thread.
+        let content = unsafe { &*(pointer as *const NSView) };
+        for view in paint_views(content) {
+            view.removeFromSuperview();
+        }
+    }
+
+    /// The window's body as one flat sheet at the very bottom, rounded as the
+    /// materials are; nothing behind it is blurred.
+    fn install_paint(window: &WebviewWindow, paint: (u8, u8, u8, u8)) {
+        let Ok(pointer) = window.ns_view() else {
+            return;
+        };
+        // SAFETY: Tao's live content view, borrowed on the main thread.
+        let content = unsafe { &*(pointer as *const NSView) };
+        let Some(main) = MainThreadMarker::new() else {
+            return;
+        };
+        use objc2_app_kit::NSUserInterfaceItemIdentification;
+        let sheet = NSBox::initWithFrame(main.alloc(), content.bounds());
+        sheet.setBoxType(NSBoxType::Custom);
+        sheet.setBorderWidth(0.0);
+        sheet.setCornerRadius(12.0);
+        sheet.setFillColor(&srgb(paint));
+        sheet.setTransparent(false);
+        sheet.setAutoresizingMask(
+            NSAutoresizingMaskOptions::ViewWidthSizable
+                | NSAutoresizingMaskOptions::ViewHeightSizable,
+        );
+        sheet.setIdentifier(Some(&objc2_foundation::NSString::from_str(PAINT_ID)));
+        content.addSubview_positioned_relativeTo(
+            &sheet,
+            objc2_app_kit::NSWindowOrderingMode::Below,
+            None,
+        );
+    }
+
     pub fn current(label: &str) -> Material {
         INSTALLED
             .lock()
@@ -266,7 +364,17 @@ mod macos {
             return Material::None;
         }
         let workspace = NSWorkspace::sharedWorkspace();
-        let preference = super::preference();
+        // rice fork: under transparent pages the material fills the whole
+        // window, and window-sized Liquid Glass costs WindowServer several
+        // times what vibrancy does on every frame behind it (a moving
+        // wallpaper, a window sliding past). Automatic picks vibrancy then;
+        // Liquid Glass chosen by name is still glass.
+        let preference = match super::preference() {
+            super::Preference::Auto if crate::site_styles::page_transparency() => {
+                super::Preference::Vibrancy
+            }
+            preference => preference,
+        };
         let reduce_transparency = workspace.accessibilityDisplayShouldReduceTransparency();
         let material = if panel {
             // The launcher is two shapes rather than one window-sized sheet;
@@ -280,32 +388,47 @@ mod macos {
             // Clear before reapplying: the upstream glass API inserts a new view.
             let _ = clear_liquid_glass(window);
             let _ = clear_vibrancy(window);
+            clear_paint(window);
+            // rice fork: blur off paints the window flat instead.
+            let paint = (!reduce_transparency && preference != super::Preference::None)
+                .then(|| super::paint(crate::appearance_is_light(window)))
+                .flatten();
             // The system's materials as it draws them, untinted unless the
             // person asked for the theme's ground over them.
             let tint = super::tint(crate::appearance_is_light(window));
-            select_material(
-                reduce_transparency,
-                preference,
-                || {
-                    let options = LiquidGlassOptions::new(NSGlassEffectViewStyle::Regular)
-                        .radius(12.0)
-                        .opaque(false);
-                    let options = match tint {
-                        Some(tint) => options.tint_color(tint),
-                        None => options,
-                    };
-                    apply_liquid_glass(window, options).is_ok()
-                },
-                || {
-                    let applied =
-                        apply_vibrancy(window, NSVisualEffectMaterial::Sidebar, None, Some(12.0))
-                            .is_ok();
-                    if let (true, Some(tint)) = (applied, tint) {
-                        tint_vibrancy(window, tint);
-                    }
-                    applied
-                },
-            )
+            if let Some(paint) = paint {
+                install_paint(window, paint);
+                // The frame treats it as a translucent material, which it is.
+                Material::Vibrancy
+            } else {
+                select_material(
+                    reduce_transparency,
+                    preference,
+                    || {
+                        let options = LiquidGlassOptions::new(NSGlassEffectViewStyle::Regular)
+                            .radius(12.0)
+                            .opaque(false);
+                        let options = match tint {
+                            Some(tint) => options.tint_color(tint),
+                            None => options,
+                        };
+                        apply_liquid_glass(window, options).is_ok()
+                    },
+                    || {
+                        let applied = apply_vibrancy(
+                            window,
+                            NSVisualEffectMaterial::Sidebar,
+                            None,
+                            Some(12.0),
+                        )
+                        .is_ok();
+                        if let (true, Some(tint)) = (applied, tint) {
+                            tint_vibrancy(window, tint);
+                        }
+                        applied
+                    },
+                )
+            }
         };
         if !panel {
             set_ground(window, material);
@@ -388,7 +511,7 @@ mod macos {
     }
 }
 #[cfg(target_os = "macos")]
-pub use macos::{current, install};
+pub use macos::{current, install, PAINT_ID};
 
 #[cfg(test)]
 mod tests {

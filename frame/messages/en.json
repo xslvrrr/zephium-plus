@@ -3879,7 +3879,7 @@
   "rice_texture_opacity": "Texture strength",
   "rice_texture_opacity_desc": "How strongly the texture shows.",
   "rice_page_transparency": "Transparent pages",
-  "rice_page_transparency_desc": "Let the window show through where a site style clears a page's background.",
+  "rice_page_transparency_desc": "Let the window show through where a site style clears a page's background. While on, the Automatic window material is Vibrancy, which costs the GPU far less than Liquid Glass behind a whole page.",
   "rice_page_transparency_solid": "Needs a window material other than Solid.",
   "site_styles_group": "Site styles",
   "site_styles_group_desc": "Zen Internet's styles for 600+ sites, by sameerasw (MIT). Each site's switches are in its site menu.",
