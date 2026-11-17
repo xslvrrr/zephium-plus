@@ -443,6 +443,26 @@ pub fn set_media_suspended(view: &wry::WebView, suspended: bool) {
     unsafe { webkit(view).setAllMediaPlaybackSuspended_completionHandler(suspended, None) };
 }
 
+/// Ends a closed tab's page in its web content process. wry keeps the
+/// WKWebView alive past its own drop, so without this the page goes on
+/// running after its tab is gone, sound included. `_close` is the SPI Safari
+/// closes tabs with; where it is missing, media is still suspended and
+/// loading stopped.
+pub(crate) fn close_page(view: &wry::WebView) {
+    let page = webkit(view);
+    // SAFETY: main-thread WebKit access; the SPI is used only when present
+    // and nothing presents or drives the page after its tab closed.
+    unsafe {
+        page.setAllMediaPlaybackSuspended_completionHandler(true, None);
+        let closable: bool = objc2::msg_send![&*page, respondsToSelector: objc2::sel!(_close)];
+        if closable {
+            let _: () = objc2::msg_send![&*page, _close];
+        } else {
+            page.stopLoading();
+        }
+    }
+}
+
 /// Validate the real OS owner again at native consent admission/settlement.
 pub(crate) fn permission_owner_is_focused(parent: raw_window_handle::RawWindowHandle) -> bool {
     let Some(mtm) = MainThreadMarker::new() else {

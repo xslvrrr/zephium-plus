@@ -422,6 +422,10 @@ impl Drop for ObservedView {
         if policy_cleanup_failed {
             eprintln!("content blocker: native registration retirement failed during view drop");
         }
+        // wry leaks the WKWebView on drop, so the page itself has to be ended
+        // here or a closed tab keeps playing sound.
+        #[cfg(target_os = "macos")]
+        crate::platform::imp::close_page(&self.view);
     }
 }
 

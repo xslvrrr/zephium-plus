@@ -119,6 +119,8 @@ impl EngineHost {
             });
         };
         crate::platform::macos::fullscreen::close_presentations(&view.view, finish);
+        // The page is closed only once WebKit hands it back; it goes quiet now.
+        crate::platform::imp::set_media_suspended(&view.view, true);
         let deadline =
             crate::platform::imp::schedule_presentation_timeout(RETIRE_DEADLINE, move || {
                 let _ = super::dispatch::try_with(move |host| {
