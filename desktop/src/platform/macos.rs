@@ -1,9 +1,9 @@
 mod log;
+mod popover_close;
 /// rice fork: named pointer zones the chrome watches over the page.
 mod reach_zone;
 /// rice fork: the native texture backdrop.
 pub mod rice_backdrop;
-mod popover_close;
 mod sidebar_edge;
 mod sidebar_resize;
 mod swipe;
