@@ -9,7 +9,6 @@ export const notchMode = () =>
   preferences.value("ui.toolbar") === "top" && surface.currentPage() !== "work";
 
 const holds = new SvelteSet<symbol>();
-let pinned = $state(false);
 let newTab = $state(false);
 
 /** A new tab asked for while a page is in front: the notch's field opens
@@ -26,9 +25,16 @@ export function holdNotch(owner: symbol, held: boolean) {
   else holds.delete(owner);
 }
 
-/** The new tab and Zephium's own pages keep it down. */
-export function pinNotch(value: boolean) {
-  pinned = value;
+/** Holds the notch down until the returned function is called: for what
+ *  the notch opened outside itself (an extension's popup, a native menu),
+ *  which the pointer can reach only by leaving the notch. */
+export function notchHold(): () => void {
+  const owner = Symbol("notch hold");
+  holdNotch(owner, true);
+  return () => holdNotch(owner, false);
 }
 
-export const notchDown = () => notchMode() && (pinned || holds.size > 0 || zoneInside("notch"));
+/** Down only while the pointer is in its zone or something holds it: focus
+ *  in it, or a menu, dialog or popup it opened. Nothing pins it down
+ *  otherwise, on Zephium's own pages included. */
+export const notchDown = () => notchMode() && (holds.size > 0 || zoneInside("notch"));

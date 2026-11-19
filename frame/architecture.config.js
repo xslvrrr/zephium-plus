@@ -76,10 +76,15 @@ export const architecture = {
             from: { element: { type: "features", captured: { module: "assist" } } },
             allow: { to: { element: { type: "features", captured: { module: "work" } } } },
           },
-          // rice fork: the notch toolbar holds the sidebar's navigation buttons.
+          // rice fork: the notch toolbar holds the sidebar's navigation buttons,
+          // and stays down while an extension's popup it opened is up.
           {
             from: { element: { type: "features", captured: { module: "notch" } } },
-            allow: { to: { element: { type: "features", captured: { module: "sidebar" } } } },
+            allow: {
+              to: {
+                element: { type: "features", captured: { module: ["sidebar", "extensions"] } },
+              },
+            },
           },
           {
             from: { element: { type: "features", captured: { module: "library" } } },

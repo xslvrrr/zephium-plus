@@ -11,7 +11,8 @@
   import { reducedMotion } from "$shared/lib/motion";
   import { claimRegion } from "$session/chrome-regions.svelte";
   import { setZone } from "$session/reach-zones.svelte";
-  import { holdNotch, notchDown } from "$session/notch.svelte";
+  import { holdNotch, notchDown, notchHold } from "$session/notch.svelte";
+  import { holdWhilePopupOpen } from "$features/extensions";
   import { NOTCH, notchFigure } from "../lib/shape";
 
   let {
@@ -208,12 +209,14 @@
   });
 
   // The sidebar's "…" menu, opened from the notch; an extension chosen in it
-  // hangs its popup from this button.
+  // hangs its popup from this button. The notch stays down while the native
+  // menu is open, which the pointer can reach only by leaving the notch.
   const sidebarMenu = Symbol("notch menu button");
   function openMenu(event: MouseEvent) {
     const target = event.currentTarget;
-    if (target instanceof HTMLButtonElement)
-      openSidebarMenu(sidebarMenu, target.getBoundingClientRect());
+    if (!(target instanceof HTMLButtonElement)) return;
+    const release = notchHold();
+    void openSidebarMenu(sidebarMenu, target.getBoundingClientRect()).finally(release);
   }
   let handledCommand = 0;
   $effect(() => {
@@ -222,7 +225,9 @@
     handledCommand = command.seq;
     if (!command.id.startsWith("extension.action=")) return;
     const id = command.id.slice("extension.action=".length);
-    untrack(() => runMenuExtension(sidebarMenu, id));
+    untrack(() => {
+      if (runMenuExtension(sidebarMenu, id)) holdWhilePopupOpen(notchHold);
+    });
   });
 </script>
 

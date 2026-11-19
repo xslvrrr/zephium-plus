@@ -36,11 +36,7 @@
   import { selectionGlide } from "$features/tabs";
   import * as tabDrag from "$session/tab-drag.svelte";
   import { requestTab } from "$session/work-tab.svelte";
-  import {
-    expanded as sidebarWidth,
-    expandBriefly,
-    isCompact,
-  } from "$session/sidebar-mode.svelte";
+  import { expanded as sidebarWidth, expandBriefly, isCompact } from "$session/sidebar-mode.svelte";
   import { uiCommands as ui } from "$domain/ui-commands";
   import { tick, untrack, type Component, type Snippet } from "svelte";
   import { clearRequest } from "$domain/site-data";
@@ -82,7 +78,7 @@
   import { tabs } from "$domain/tabs";
   import { preferences } from "$domain/preferences";
   import { Notch } from "$features/notch";
-  import { holdNotch, notchMode, pinNotch, setNotchNewTab } from "$session/notch.svelte";
+  import { holdNotch, notchMode, setNotchNewTab } from "$session/notch.svelte";
   /** The new tab field's menu, kept out of the graph the launcher shares. */
   const loadMenu = () => import("$shared/ui/Menu");
   /** New Note, from the menu or its shortcut: a note starts where notes are open. */
@@ -412,10 +408,10 @@
       else if (!tab || tab.url || tab.id !== newTabLoad) newTabLoad = null;
     });
   });
-  // rice fork: the notch is down on Zephium's own pages; over a web page and
-  // over the empty window (Zen's new tab) only the pointer, a new tab or
-  // something held in it brings it down.
-  $effect(() => pinNotch(notched && browserPage.currentPage() !== null));
+  // rice fork: the notch is down only while the pointer is in it, a new tab
+  // or find asks for its field, or something it opened (focus, a menu, an
+  // extension's popup) holds it: unfocused, it goes up everywhere, Zephium's
+  // own pages included (`notchDown`).
   // rice fork: the panes the chrome draws in the page's place, where the
   // notch must leave the pointer to them as it does on the new tab.
   let chromePane = $derived.by(() => {
@@ -598,7 +594,9 @@
   <Sidebar
     >{#snippet browserBody(compact)}
       {#if compact && (inWork || besideRail)}
-        {#if !inWork && !(toolPage && !paneled)}{#if !notched}<AddressField {compact} />{/if}<StoreInstallRail />{/if}
+        {#if !inWork && !(toolPage && !paneled)}{#if !notched}<AddressField
+              {compact}
+            />{/if}<StoreInstallRail />{/if}
         {#if paneled && IS_WINDOWS}
           {#if browserPage.currentPage() === "settings"}<ModeTabs compact standalone />{/if}
           <div class="rail-search"><SidebarSearch /></div>

@@ -11,8 +11,9 @@ import { commands } from "$shared/ipc/bindings";
 let opened: { owner: symbol; anchor: DOMRect } | null = null;
 
 /** The sidebar's native menu: the page's controls, site protection, clearing
- *  the site's data, and the extensions' buttons. It hangs from `anchor`. */
-export function openSidebarMenu(owner: symbol, anchor: DOMRect) {
+ *  the site's data, and the extensions' buttons. It hangs from `anchor`.
+ *  Settles once native has put the menu away. */
+export async function openSidebarMenu(owner: symbol, anchor: DOMRect): Promise<void> {
   opened = { owner, anchor };
   const active = tabs.activeTab();
   const { siteProtected, canHide } = siteMenuState(blocker.status());
@@ -29,7 +30,7 @@ export function openSidebarMenu(owner: symbol, anchor: DOMRect) {
       icon: action.icon_rgba_base64,
       enabled: action.enabled,
     }));
-  void commands.sidebarMenuPopup(
+  await commands.sidebarMenuPopup(
     anchor.left,
     anchor.bottom,
     siteProtected,
@@ -41,15 +42,16 @@ export function openSidebarMenu(owner: symbol, anchor: DOMRect) {
 }
 
 /** Runs the extension a sidebar menu chose, from that menu's anchor, when
- *  `owner` opened it. */
-export function runMenuExtension(owner: symbol, id: string) {
-  if (opened?.owner !== owner) return;
+ *  `owner` opened it. True when it was run and presents a popup. */
+export function runMenuExtension(owner: symbol, id: string): boolean {
+  if (opened?.owner !== owner) return false;
   const anchor = opened.anchor;
   const profile = tabs.profile()?.id ?? null;
   const tab = tabs.activeId();
   const action = extensions
     .activeActions(profile, tab)
     .find((candidate) => candidate.runtime.install_id === id);
-  if (profile === null || tab === null || !action) return;
+  if (profile === null || tab === null || !action) return false;
   void extensions.invoke(profile, tab, action, anchor);
+  return action.presents_popup;
 }

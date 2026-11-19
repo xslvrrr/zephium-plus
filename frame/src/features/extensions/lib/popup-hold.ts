@@ -1,5 +1,7 @@
 import * as attention from "$session/attention.svelte";
 
+type Hold = () => () => void;
+
 /** How long a popup has to take the keyboard before the hold lets go. */
 const TAKE_MS = 1500;
 /** Where nothing says the popup went, the hold never outlasts this. */
@@ -9,10 +11,11 @@ const LONGEST_MS = 45_000;
  * An extension's popup takes the keyboard from the window, which reads to a
  * hidden column like the pointer leaving it. The column stays out until the
  * window has the keyboard back, the popup gone, so the popup never hangs
- * from a column that slid away.
+ * from a column that slid away. `hold` names what else to keep out instead,
+ * such as the notch a popup hangs from.
  */
-export function holdWhilePopupOpen(): void {
-  const release = attention.hold();
+export function holdWhilePopupOpen(hold: Hold = attention.hold): void {
+  const release = hold();
   let taken = false;
   const blurred = () => (taken = true);
   const focused = () => {
