@@ -2,7 +2,7 @@
   import { Popover } from "bits-ui";
   import { onDestroy, onMount, tick, untrack } from "svelte";
   import { accountSession, planName } from "$domain/account";
-  import { preferences } from "$domain/preferences";
+  import { preferences, type PreferenceKey } from "$domain/preferences";
   import type { WorkModelEntry, WorkModelProvider, WorkModelReasoning } from "$shared/ipc/bindings";
   import { commands } from "$shared/ipc/bindings";
   import {
@@ -24,6 +24,7 @@
   } from "$domain/ai";
   import Icon from "$shared/ui/Icon";
   import ProviderMark from "$shared/ui/ProviderMark";
+  import type { MenuEntry } from "$shared/ui/Menu";
   import { menuMaterialFor } from "$shared/ui/Menu/material";
   import {
     Cancel01Icon,
@@ -220,13 +221,60 @@
     return () => (live = false);
   });
   /**
-   * rice fork: a subscription harness chosen in Settings → AI answers every
-   * role with its own sign-in, so there is no key to add, account to sign in
-   * to or model to pick here: the chip only names it.
+   * rice fork: a subscription harness answers every role with its own
+   * sign-in, so there is no key to add, account to sign in to or model to
+   * pick: its chip names it and switches between the harnesses on this
+   * computer and the person's own models.
    */
+  type Harness = { id: string; preference: PreferenceKey; name: () => string };
+  const HARNESSES: Harness[] = [
+    { id: "claude-code", preference: "ai.claude-code", name: () => m.claude_code_group() },
+  ];
+  /** The menu loads with the chip that needs it, not with the picker. */
+  const loadMenu = () => import("$shared/ui/Menu");
+  const MODELS = "models";
+  const ADD_KEY = "add-key";
+  /** The harnesses installed here, which the chip can switch to. */
+  let installed = $state<string[]>([]);
+  onMount(() => {
+    void Promise.resolve()
+      .then(() => commands.claudeCodeStatus())
+      .then((status) => {
+        if (status?.path) installed = ["claude-code"];
+      })
+      .catch(() => {});
+  });
   const harness = $derived(
-    preferences.value("ai.claude-code") === "true" ? m.claude_code_group() : null,
+    HARNESSES.find((candidate) => preferences.value(candidate.preference) === "true") ?? null,
   );
+  const offered = $derived(
+    HARNESSES.filter((candidate) => installed.includes(candidate.id) || candidate === harness),
+  );
+  /** The harnesses, then the person's own models (or, with none ready, adding a key). */
+  const harnessEntries = $derived<MenuEntry[]>([
+    { kind: "heading", label: m.harness_heading() },
+    ...offered.map((candidate): MenuEntry => ({
+      kind: "item",
+      id: candidate.id,
+      label: candidate.name(),
+      checked: candidate === harness,
+    })),
+    harness === null && leadMissing
+      ? { kind: "item", id: ADD_KEY, label: m.work_model_add_model_key(), checked: false }
+      : { kind: "item", id: MODELS, label: m.harness_models(), checked: harness === null },
+  ]);
+  /** Turns on the harness `id` and every other off; MODELS turns them all off. */
+  async function useHarness(id: string) {
+    if (id === ADD_KEY) return settings();
+    for (const candidate of HARNESSES) {
+      const on = candidate.id === id;
+      if ((preferences.value(candidate.preference) === "true") === on) continue;
+      // Ask reaches the browser through the MCP bridge, as Settings turns it on.
+      if (on && candidate.id === "claude-code" && preferences.value("mcp.enabled") !== "true")
+        await preferences.set("mcp.enabled", "true");
+      await preferences.set(candidate.preference, String(on));
+    }
+  }
   /** No model can run yet: the one thing to do is add a key, so the control is that, not a menu. */
   const keyless = $derived(!harness && !!models && leadMissing);
 
@@ -583,12 +631,26 @@
   );
 </script>
 
-{#if harness}
-  <span class="model-trigger harness ui-shine" role="note"
-    ><span class="trigger-mark" aria-hidden="true"
-      ><ProviderMark provider="anthropic" size={15} /></span
-    ><span class="trigger-name">{harness}</span></span
-  >
+{#if harness || (keyless && offered.length > 0)}
+  {#await loadMenu() then { default: Menu }}<Menu
+      label={m.harness_label()}
+      entries={harnessEntries}
+      side="top"
+      align="end"
+      triggerClass={`model-trigger ui-shine ui-shine-press${harness ? "" : " add-key"}`}
+      onselect={(id) => void useHarness(id)}
+    >
+      {#snippet trigger()}
+        {#if harness}<span class="trigger-mark" aria-hidden="true"
+            ><ProviderMark provider="anthropic" size={15} /></span
+          ><span class="trigger-name">{harness.name()}</span>{:else}<span
+            class="trigger-mark"
+            aria-hidden="true"><Icon icon={Key01Icon} size={14} /></span
+          ><span class="trigger-name"
+            >{hostedOffer ? m.work_model_start() : m.work_model_add_model_key()}</span
+          >{/if}
+      {/snippet}
+    </Menu>{/await}
 {:else if keyless}
   <button type="button" class="model-trigger add-key ui-shine ui-shine-press" onclick={settings}>
     <span class="trigger-mark" aria-hidden="true"><Icon icon={Key01Icon} size={14} /></span>
@@ -674,6 +736,17 @@
                 onclick={() => (searchOpen ? closeSearch() : void openSearch())}
                 ><Icon icon={Search01Icon} size={15} strokeWidth={1.9} /></button
               >
+              {#if offered.length > 0}<button
+                  type="button"
+                  class="tool"
+                  aria-label={m.harness_use_claude_code()}
+                  title={m.harness_use_claude_code()}
+                  onpointerdown={(event) => event.preventDefault()}
+                  onclick={() => {
+                    opened(false);
+                    void useHarness(offered[0]!.id);
+                  }}><ProviderMark provider="anthropic" size={14} /></button
+                >{/if}
               <button
                 type="button"
                 class="tool"
@@ -887,10 +960,7 @@
     opacity: 0;
   }
 
-  .harness {
-    cursor: default;
-  }
-
+  :global(.model-trigger.add-key),
   .add-key {
     align-items: center;
     gap: 7px;
