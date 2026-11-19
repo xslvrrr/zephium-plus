@@ -416,7 +416,12 @@ pub(crate) async fn work_models_ready(
                     WorkSearchReadiness::Unavailable => WorkSearchReadyV1::Unavailable,
                 }
             };
-            (models::ready(profile).await, search)
+            // rice fork: Claude Code answers every role on its own sign-in.
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            let harness = crate::claude_code::model::answers_work();
+            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+            let harness = false;
+            (harness || models::ready(profile).await, search)
         }
         None => (false, WorkSearchReadyV1::Unavailable),
     };

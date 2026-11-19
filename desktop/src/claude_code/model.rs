@@ -33,11 +33,16 @@ tool's `name` and an `input` object matching that tool's input schema. The resul
 back in the next message, marked with the call's id. Leave `tool_calls` empty only when \
 you are done and have nothing more to call.";
 
+/// Whether Claude Code answers Work's model calls: it is on and installed.
+/// It signs in with its own subscription, so no key is needed.
+pub(crate) fn answers_work() -> bool {
+    crate::app_setting("ai.claude-code").as_deref() == Some("true") && super::locate().is_some()
+}
+
 /// The models a Work run uses when Claude Code answers: `None` while it is
 /// off or not installed, and the run falls back to the person's choices.
 pub(crate) fn lead_models() -> Option<WorkLeadModels> {
-    if crate::app_setting("ai.claude-code").as_deref() != Some("true") || super::locate().is_none()
-    {
+    if !answers_work() {
         return None;
     }
     let model = |role, alias: Option<&'static str>, name: &str| LeadModel {

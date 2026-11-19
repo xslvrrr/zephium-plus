@@ -2,6 +2,7 @@
   import { Popover } from "bits-ui";
   import { onDestroy, onMount, tick, untrack } from "svelte";
   import { accountSession, planName } from "$domain/account";
+  import { preferences } from "$domain/preferences";
   import type { WorkModelEntry, WorkModelProvider, WorkModelReasoning } from "$shared/ipc/bindings";
   import { commands } from "$shared/ipc/bindings";
   import {
@@ -218,8 +219,16 @@
       });
     return () => (live = false);
   });
+  /**
+   * rice fork: a subscription harness chosen in Settings → AI answers every
+   * role with its own sign-in, so there is no key to add, account to sign in
+   * to or model to pick here: the chip only names it.
+   */
+  const harness = $derived(
+    preferences.value("ai.claude-code") === "true" ? m.claude_code_group() : null,
+  );
   /** No model can run yet: the one thing to do is add a key, so the control is that, not a menu. */
-  const keyless = $derived(!!models && leadMissing);
+  const keyless = $derived(!harness && !!models && leadMissing);
 
   /** The card shows the effort control until it is put away: by Escape, a click elsewhere, or a rest. */
   let effortOpen = $state(false);
@@ -574,7 +583,13 @@
   );
 </script>
 
-{#if keyless}
+{#if harness}
+  <span class="model-trigger harness ui-shine" role="note"
+    ><span class="trigger-mark" aria-hidden="true"
+      ><ProviderMark provider="anthropic" size={15} /></span
+    ><span class="trigger-name">{harness}</span></span
+  >
+{:else if keyless}
   <button type="button" class="model-trigger add-key ui-shine ui-shine-press" onclick={settings}>
     <span class="trigger-mark" aria-hidden="true"><Icon icon={Key01Icon} size={14} /></span>
     <span class="trigger-name"
@@ -870,6 +885,10 @@
 
   :global(.model-trigger:disabled) {
     opacity: 0;
+  }
+
+  .harness {
+    cursor: default;
   }
 
   .add-key {
