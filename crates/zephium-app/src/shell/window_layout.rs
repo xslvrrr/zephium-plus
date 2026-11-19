@@ -42,16 +42,12 @@ impl Shell {
     }
 
     pub(super) fn refresh_sidebar_peek(&self) {
-        if let Some(win) = self
-            .windows
-            .focused()
-            .filter(|win| {
-                win.sidebar_peek
-                    && win.metrics.sidebar_hidden
-                    && !win.metrics.spans
-                    && self.window_visible
-            })
-        {
+        if let Some(win) = self.windows.focused().filter(|win| {
+            win.sidebar_peek
+                && win.metrics.sidebar_hidden
+                && !win.metrics.spans
+                && self.window_visible
+        }) {
             let card = layout::hidden_card(win.size, win.metrics);
             // Repeating the raised target keeps an in-flight native slide;
             // only its card geometry changes with these admitted metrics.

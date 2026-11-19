@@ -75,7 +75,7 @@ pub(crate) fn place(stage: &NSView, notch: Option<PageNotch>, animate: bool) {
     };
     let moving =
         animate && !NSWorkspace::sharedWorkspace().accessibilityDisplayShouldReduceMotion();
-    if !notch.down && !(moving && current.is_some()) {
+    if !(notch.down || (moving && current.is_some())) {
         unmask(&layer);
         return;
     }
