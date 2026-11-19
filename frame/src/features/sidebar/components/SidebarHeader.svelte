@@ -52,7 +52,7 @@
   function openMenu(event: MouseEvent) {
     const target = event.currentTarget;
     if (!(target instanceof HTMLButtonElement)) return;
-    openSidebarMenu(menuOwner, target.getBoundingClientRect());
+    void openSidebarMenu(menuOwner, target.getBoundingClientRect());
   }
 
   let handledCommand = 0;
@@ -121,12 +121,11 @@
          lights; search stands there instead. -->
     {#if launcher && IS_WINDOWS}<span class="flex w-14 shrink-0 justify-center"
         ><ModeTabs compact /></span
-      >{:else if launcher}<span class="ms-1.5 flex"><SidebarSearch /></span
-      >{:else if !grouped}<IconButton
-        icon={SidebarLeftIcon}
-        label={m.ui_compact_mode()}
-        onclick={ontoggle}
-      />{/if}<span class="flex-1" aria-hidden="true"></span>
+      >{:else if launcher}<span class="ms-1.5 flex"><SidebarSearch /></span>{:else if !grouped}<span
+        class="flex"
+        style:margin-inline-start={lights ? "var(--sidebar-toggle-gap)" : undefined}
+        ><IconButton icon={SidebarLeftIcon} label={m.ui_compact_mode()} onclick={ontoggle} /></span
+      >{/if}<span class="flex-1" aria-hidden="true"></span>
 
     {#if pageControls && navControls}<NavControls />{/if}
 

@@ -364,6 +364,9 @@
   --titlebar-height: 32px;
   --traffic-light-inset: 60px;
 
+  /* rice fork: the sidebar toggle stands this far past the lights. */
+  --sidebar-toggle-gap: 10px;
+
   /* How a control separates from the surface under it, which is a different
      problem in each theme and so a different value, not a different rule. On a
      dark ground a control is lighter than its surface and needs nothing; on a

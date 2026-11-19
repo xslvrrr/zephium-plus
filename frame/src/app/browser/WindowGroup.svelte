@@ -32,6 +32,10 @@
    *  keep-up area reaches beyond the group's rect. */
   const STRIP = 4;
   const REACH = 24;
+  /** The share of the group's height over the lights that also brings it
+   *  down: only the top fifth, so reaching for Browse and Work just below
+   *  does not. The keep-up area stays the whole group. */
+  const LIGHTS_REACH = 0.2;
   /** Longer than the slide, for a transitionend that never comes. */
   const SETTLE_FALLBACK = 400;
 
@@ -91,7 +95,10 @@
   $effect(() => {
     if (width <= 0 || height <= 0) return;
     setZone("group", {
-      activate: [new DOMRect(0, 0, width, STRIP), new DOMRect(0, 0, lightsEnd, height)],
+      activate: [
+        new DOMRect(0, 0, width, STRIP),
+        new DOMRect(0, 0, lightsEnd, Math.max(STRIP, height * LIGHTS_REACH)),
+      ],
       keep: new DOMRect(0, 0, width + REACH, height + REACH),
     });
   });
@@ -165,8 +172,10 @@
     }
   }
 
+  /* Clear of the lights, as the sidebar's head draws it. */
   .window-group-button {
     display: flex;
+    margin-inline-start: var(--sidebar-toggle-gap);
     border-radius: var(--radius-control);
   }
 
