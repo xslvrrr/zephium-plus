@@ -8,7 +8,7 @@ build = false
 
 [dependencies]
 zephium-ipc.workspace = true
-cssparser = "0.37"
+cssparser = "0.38"
 
 [dev-dependencies]
 proptest.workspace = true
