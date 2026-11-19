@@ -159,7 +159,7 @@ windows-probe-sys = { package = "windows-sys", version = "=0.61.2", optional = t
     "Win32_System_ProcessStatus",
     "Win32_System_Threading",
 ] }
-windows-core = "0.61"
+windows-core = "0.62"
 windows-numerics = "0.2"
 
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
