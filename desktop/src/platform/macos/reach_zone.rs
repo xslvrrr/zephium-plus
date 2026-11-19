@@ -8,6 +8,9 @@
 //! notch's usual way out is up past the window's top edge, onto the menu bar
 //! or another app, where no move arrives; a tracking area over each watched
 //! window's content view reports that exit.
+//!
+//! Presses are read the same way: a press on the page never reaches the
+//! chrome's document, so the notch could not tell its field was clicked off.
 
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -19,7 +22,7 @@ use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::{define_class, msg_send, AllocAnyThread, DefinedClass, MainThreadOnly};
 use objc2_app_kit::{
-    NSEvent, NSEventMask, NSTrackingArea, NSTrackingAreaOptions, NSView, NSWindow,
+    NSEvent, NSEventMask, NSEventType, NSTrackingArea, NSTrackingAreaOptions, NSView, NSWindow,
 };
 use objc2_foundation::{MainThreadMarker, NSObject, NSObjectProtocol, NSRect};
 use tauri::{Manager, WebviewWindow};
@@ -126,6 +129,29 @@ fn observe() {
     }
 }
 
+/// A press in a watched window, wherever in it: where it landed, in the
+/// content view's top-left logical points.
+fn pressed() {
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    let under =
+        NSWindow::windowNumberAtPoint_belowWindowWithWindowNumber(NSEvent::mouseLocation(), 0, mtm);
+    let hit = WATCHED.with(|watched| {
+        let watched = watched.try_borrow().ok()?;
+        let entry = watched.iter().find(|entry| entry.number == under)?;
+        Some((entry.window.clone(), location(entry)?))
+    });
+    if let Some((window, (x, y))) = hit {
+        crate::emit_to_privileged(
+            window.app_handle(),
+            window.label(),
+            "zephium:reach-press",
+            &serde_json::json!({ "x": x, "y": y }),
+        );
+    }
+}
+
 /// The pointer left window `number`'s content view.
 fn left(number: isize) {
     let changed = WATCHED.with(|watched| {
@@ -169,14 +195,26 @@ fn monitor(watching: bool) {
         match (watching, monitor.is_some()) {
             (true, false) => {
                 let handler = RcBlock::new(|event: NonNull<NSEvent>| -> *mut NSEvent {
-                    let _ = catch_unwind(AssertUnwindSafe(observe));
+                    // SAFETY: AppKit hands the monitor a live event.
+                    let kind = unsafe { event.as_ref() }.r#type();
+                    let press = matches!(
+                        kind,
+                        NSEventType::LeftMouseDown
+                            | NSEventType::RightMouseDown
+                            | NSEventType::OtherMouseDown
+                    );
+                    let _ = catch_unwind(AssertUnwindSafe(if press { pressed } else { observe }));
                     event.as_ptr()
                 });
                 // SAFETY: an app-local main-thread monitor that hands every
                 // event back untouched.
                 *monitor = unsafe {
                     NSEvent::addLocalMonitorForEventsMatchingMask_handler(
-                        NSEventMask::MouseMoved | NSEventMask::LeftMouseDragged,
+                        NSEventMask::MouseMoved
+                            | NSEventMask::LeftMouseDragged
+                            | NSEventMask::LeftMouseDown
+                            | NSEventMask::RightMouseDown
+                            | NSEventMask::OtherMouseDown,
                         &handler,
                     )
                 };

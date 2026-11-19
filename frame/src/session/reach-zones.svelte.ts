@@ -6,6 +6,11 @@ const specs = new SvelteMap<string, Spec>();
 const inside = $state<Record<string, boolean>>({});
 let queued = false;
 let listening = false;
+/** When the chrome's own document last took a press. */
+let pressedAt = -Infinity;
+/** A native press with no press in the document this close to it landed
+ *  outside the document: on the page. */
+const PRESS_PAIRING_MS = 250;
 
 const plain = ({ x, y, width, height }: DOMRect) => ({ x, y, width, height });
 
@@ -21,6 +26,26 @@ export function setZone(name: string, spec: Spec | null) {
         .detail;
       // Native repeats a held zone whenever the zones are sent again.
       if (inside[zone] !== now) inside[zone] = now;
+    });
+    // rice fork: a press on the page never reaches this document, so what
+    // closes on a press elsewhere (the notch's field, an open menu) stayed
+    // open. Native reports every press in the window; one the document did
+    // not also take is handed to it as a press outside everything.
+    window.addEventListener(
+      "pointerdown",
+      (event) => {
+        if (event.isTrusted) pressedAt = performance.now();
+      },
+      true,
+    );
+    window.addEventListener("zephium:reach-press", () => {
+      const native = performance.now();
+      setTimeout(() => {
+        if (Math.abs(pressedAt - native) < PRESS_PAIRING_MS) return;
+        document.body.dispatchEvent(
+          new PointerEvent("pointerdown", { bubbles: true, cancelable: true, composed: true }),
+        );
+      }, PRESS_PAIRING_MS);
     });
   }
   if (spec === null) specs.delete(name);
