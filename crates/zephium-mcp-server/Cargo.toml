@@ -15,4 +15,4 @@ tokio = { workspace = true, features = ["net", "io-util", "io-std", "time", "syn
 url.workspace = true
 
 [target.'cfg(unix)'.dependencies]
-libc = "=0.2.186"
+libc = "=0.2.191"

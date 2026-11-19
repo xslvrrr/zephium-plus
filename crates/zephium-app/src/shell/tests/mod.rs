@@ -318,6 +318,7 @@ pub(crate) struct FakeEngine {
     hold_picker: std::sync::atomic::AtomicBool,
     held_picker: Mutex<Option<zephium_core::blocker::ElementPickerCompletion>>,
     calls: Mutex<Vec<String>>,
+    chrome_raises: Mutex<Vec<ChromeRaise>>,
     proxies: Mutex<Vec<Option<String>>>,
     previews: Mutex<Vec<Option<zephium_core::ports::engine::DropPreview>>>,
     extension_browser_surfaces: Mutex<Vec<ExtensionBrowserSurface>>,
@@ -355,6 +356,7 @@ pub(crate) struct FakeEngine {
     reject_navigation_dispatch: std::sync::atomic::AtomicBool,
     reject_discard_dispatch: std::sync::atomic::AtomicBool,
     reject_native_dispatch: std::sync::atomic::AtomicBool,
+    unsupported_chrome_raise: std::sync::atomic::AtomicBool,
     native_favicons: std::sync::atomic::AtomicBool,
     cannot_mute: std::sync::atomic::AtomicBool,
     unsupported_presentation: std::sync::atomic::AtomicBool,
@@ -368,6 +370,7 @@ pub(crate) struct FakeEngine {
     fullscreen_exits: Mutex<Vec<ItemId>>,
     layout_regions: Mutex<Vec<Option<Rect>>>,
     tab_preview_completions: Mutex<Vec<HeldTabPreview>>,
+    site_permission_reply: Mutex<Option<Option<Vec<zephium_core::permissions::SitePermission>>>>,
     data_calls: Mutex<Vec<(Partition, zephium_core::browsing_data::EngineDataCall)>>,
     data_reply: Mutex<Option<zephium_core::browsing_data::EngineDataReply>>,
     download_calls: Mutex<Vec<(Partition, zephium_core::downloads::DownloadCall)>>,
@@ -380,6 +383,15 @@ pub(crate) struct FakeEngine {
     >,
     pub(crate) extension_data_changes:
         Mutex<Vec<(ProfileId, zephium_core::extension_data::ExtensionDataChange)>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ChromeRaise {
+    window: WindowId,
+    raised: bool,
+    card: Rect,
+    slide: bool,
+    dispatch: NativeDispatch,
 }
 
 impl FakeEngine {
@@ -506,6 +518,26 @@ impl FakeEngine {
 }
 
 impl Engine for FakeEngine {
+    fn site_permissions(
+        &self,
+        _profile: ProfileId,
+        done: zephium_core::permissions::SitePermissionsDone,
+    ) {
+        done(
+            self.site_permission_reply
+                .lock()
+                .unwrap()
+                .clone()
+                .unwrap_or_else(|| Some(Vec::new())),
+        );
+    }
+    fn site_permission_snapshot(
+        &self,
+        profile: ProfileId,
+        done: zephium_core::permissions::SitePermissionsDone,
+    ) {
+        self.site_permissions(profile, done);
+    }
     fn capture_tab_preview(&self, id: ItemId, _url: String, done: HeldTabPreview) {
         self.log(format!("capture-preview {id}"));
         self.tab_preview_completions.lock().unwrap().push(done);
@@ -865,11 +897,26 @@ impl Engine for FakeEngine {
         &self,
         window: WindowId,
         raised: bool,
-        _card: Rect,
-        _slide: bool,
+        card: Rect,
+        slide: bool,
     ) -> NativeDispatch {
         self.log(format!("raise@{window} {raised}"));
-        self.native_admission()
+        let dispatch = if self
+            .unsupported_chrome_raise
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            NativeDispatch::Unsupported
+        } else {
+            self.native_admission()
+        };
+        self.chrome_raises.lock().unwrap().push(ChromeRaise {
+            window,
+            raised,
+            card,
+            slide,
+            dispatch,
+        });
+        dispatch
     }
     fn hint_stage_motion(
         &self,
@@ -2296,7 +2343,15 @@ fn apply_projection(view: &mut ItemsState, p: Projection) {
     }
 }
 
-pub(super) fn setup_with(store: Arc<FakeStore>) -> (Shell, Arc<FakeEngine>, Screen) {
+pub(super) struct SuccessfulProfileCleanup;
+impl crate::profile_cleanup::ProfileCleanup for SuccessfulProfileCleanup {
+    fn release(&self, _: ProfileId, done: crate::profile_cleanup::CleanupDone) -> bool {
+        done(true);
+        true
+    }
+}
+
+fn setup_with(store: Arc<FakeStore>) -> (Shell, Arc<FakeEngine>, Screen) {
     let engine = Arc::new(FakeEngine::default());
     engine
         .suspends_hidden
@@ -2320,6 +2375,9 @@ pub(super) fn setup_with(store: Arc<FakeStore>) -> (Shell, Arc<FakeEngine>, Scre
         Arc::new(FakeChrome),
         Box::new(move |p| apply_projection(&mut sink.lock().unwrap(), p)),
     );
+    shell.profile_cleanup = Some(Arc::new(SuccessfulProfileCleanup));
+    // Same shell path on every platform; tests opt into the native source.
+    shell.disable_native_notification_source_for_test();
     shell.handle(Command::SetWindowSize(Size::new(1200.0, 800.0)));
     (shell, engine, screen)
 }
@@ -2390,6 +2448,9 @@ fn setup_with_icon_log(store: Arc<FakeStore>) -> (Shell, Arc<FakeEngine>, Screen
             apply_projection(&mut sink.lock().unwrap(), p);
         }),
     );
+    shell.profile_cleanup = Some(Arc::new(SuccessfulProfileCleanup));
+    // Same shell path on every platform; tests opt into the native source.
+    shell.disable_native_notification_source_for_test();
     shell.handle(Command::SetWindowSize(Size::new(1200.0, 800.0)));
     (shell, engine, screen, icons)
 }
@@ -2414,6 +2475,9 @@ fn setup_with_async_chrome() -> (Shell, Arc<FakeEngine>, Arc<AsyncChrome>, Scree
         chrome.clone(),
         Box::new(move |projection| apply_projection(&mut sink.lock().unwrap(), projection)),
     );
+    shell.profile_cleanup = Some(Arc::new(SuccessfulProfileCleanup));
+    // Same shell path on every platform; tests opt into the native source.
+    shell.disable_native_notification_source_for_test();
     shell.handle(Command::SetWindowSize(Size::new(1200.0, 800.0)));
     (shell, engine, chrome, screen)
 }
@@ -2457,6 +2521,9 @@ pub(super) fn setup_with_operation_log_and_failure(
             apply_projection(&mut sink.lock().unwrap(), projection);
         }),
     );
+    shell.profile_cleanup = Some(Arc::new(SuccessfulProfileCleanup));
+    // Same shell path on every platform; tests opt into the native source.
+    shell.disable_native_notification_source_for_test();
     shell.handle(Command::SetWindowSize(Size::new(1200.0, 800.0)));
     (shell, engine, screen, operations)
 }
@@ -2622,8 +2689,10 @@ mod profiles;
 mod projections;
 mod search;
 mod shutdown;
+mod sidebar_card;
 mod site_permissions;
 mod spaces;
+mod tab_preview_tests;
 mod tabs;
 mod time;
 mod view_lifecycle;

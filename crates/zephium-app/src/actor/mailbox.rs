@@ -668,6 +668,15 @@ impl CommandQueue {
         self.inner.timer_ready.notify_one();
     }
 
+    #[cfg(test)]
+    pub(crate) fn dormancy_deadline(&self) -> Option<std::time::Instant> {
+        self.inner
+            .timer_state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .dormancy_deadline
+    }
+
     pub(crate) fn schedule_page_permission(
         &self,
         profile: ProfileId,
@@ -1373,6 +1382,7 @@ fn command_is_critical(command: &Command) -> bool {
                     | EngineEvent::ExtensionActionsInvalidated { .. }
                     | EngineEvent::NavigationFailed { .. }
                     | EngineEvent::NavigationFailureReported { .. }
+                    | EngineEvent::NativeNavigationRefused { .. }
                     | EngineEvent::ZoomSettled { .. }
                     | EngineEvent::NativeActionFailed { .. }
                     | EngineEvent::ViewCreationFailed { .. }

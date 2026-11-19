@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { SearchShortcut } from "$shared/ipc/bindings";
@@ -80,5 +81,16 @@ describe("where a query goes", () => {
     expect(withShortcut("gh cats", "yt", defaults)).toBe("yt cats");
     expect(withShortcut("cats !gh", "yt", defaults)).toBe("yt cats");
     expect(withShortcut("cats !nothing", "yt", defaults)).toBe("yt cats !nothing");
+  });
+});
+
+describe("shipped marks", () => {
+  it("ships a mark for every default shortcut and registers it", () => {
+    const marks = new URL("../../ui/EngineMark/", import.meta.url);
+    const component = readFileSync(new URL("EngineMark.svelte", marks), "utf8");
+    for (const entry of defaults) {
+      expect(readFileSync(new URL(`marks/${entry.id}.png`, marks)).length).toBeGreaterThan(0);
+      expect(component).toContain(`./marks/${entry.id}.png?no-inline`);
+    }
   });
 });

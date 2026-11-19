@@ -45,6 +45,9 @@ const native = vi.hoisted(() => ({
   settings: {} as Record<string, string>,
   profile: "00000000000000000000000501",
 }));
+
+// The new tab is drawn here as on macOS; NewTabMaterial covers Windows' caption band.
+vi.mock("$shared/platform", () => ({ IS_MAC: true, IS_WINDOWS: false }));
 vi.mock("$shared/ipc/bindings", async () => {
   const { mockBindings } = await import("$shared/testing/bindings");
   return mockBindings({
@@ -94,6 +97,7 @@ beforeEach(() => {
   vi.setSystemTime(NOW);
 });
 afterEach(() => {
+  themed("zephium");
   vi.useRealTimers();
   preferences.dispose();
   delete document.documentElement.dataset.theme;
@@ -247,10 +251,11 @@ test("a narrow pane keeps the field inside the page", async () => {
   await capture(screen, "narrow");
 });
 
-test("the new tab in each theme, both modes", async () => {
-  const screen = await setup({ "ui.newtab-clock-format": "12h" });
-  await skied(screen);
-  for (const id of ["zephium", "paper", "nord", "dracula", "catppuccin"]) {
+test.each(["zephium", "paper", "nord", "dracula", "catppuccin"])(
+  "the new tab in both modes with %s",
+  async (id) => {
+    const screen = await setup({ "ui.newtab-clock-format": "12h" });
+    await skied(screen);
     themed(id);
     for (const theme of ["dark", "light"]) {
       document.documentElement.dataset.theme = theme;
@@ -260,6 +265,5 @@ test("the new tab in each theme, both modes", async () => {
         .elementLocator(screen.container)
         .screenshot({ path: `../../../../../target/look/themes/${id}-${theme}-newtab-page.png` });
     }
-  }
-  themed("zephium");
-});
+  },
+);

@@ -15,6 +15,50 @@ pub(super) struct GrabbedDivider {
 }
 
 impl Shell {
+    pub(super) fn peek_sidebar(&mut self, peek: bool, slide: bool) {
+        let Some(win) = self.windows.focused() else {
+            return;
+        };
+        // Only a hidden sidebar is beneath the page to come over it. rice
+        // fork: spanning, the chrome beneath the page is the whole window, so
+        // raising it would take every click on the page; the frame claims the
+        // card as a region instead.
+        if peek && (!win.metrics.sidebar_hidden || !self.window_visible || win.metrics.spans) {
+            if win.sidebar_peek {
+                self.peek_sidebar(false, false);
+            }
+            return;
+        }
+        let id = win.id;
+        let card = layout::hidden_card(win.size, win.metrics);
+        if !peek {
+            // Retire replay intent even if native cleanup is refused.
+            self.windows.get_mut(id).unwrap().sidebar_peek = false;
+        }
+        let dispatch = self.engine.raise_chrome(id, peek, card, slide);
+        if peek && dispatch == NativeDispatch::Scheduled {
+            self.windows.get_mut(id).unwrap().sidebar_peek = true;
+        }
+    }
+
+    pub(super) fn refresh_sidebar_peek(&self) {
+        if let Some(win) = self
+            .windows
+            .focused()
+            .filter(|win| {
+                win.sidebar_peek
+                    && win.metrics.sidebar_hidden
+                    && !win.metrics.spans
+                    && self.window_visible
+            })
+        {
+            let card = layout::hidden_card(win.size, win.metrics);
+            // Repeating the raised target keeps an in-flight native slide;
+            // only its card geometry changes with these admitted metrics.
+            let _ = self.engine.raise_chrome(win.id, true, card, true);
+        }
+    }
+
     pub(super) fn resolve_drop(&self, x: f64, y: f64) -> Option<split::Drop> {
         if self.active_browser_page().is_some() {
             return None;
@@ -103,7 +147,14 @@ impl Shell {
                         tab.has_view()
                             && (tab.url.is_some()
                                 || tab.content == zephium_core::item::TabContent::ExtensionOwned)
-                            && !self.presentation.deferred_first_content_layout.contains(id)
+                            // Verified, the layout that admits the page is
+                            // the one that makes room for it.
+                            && (!self.presentation.deferred_first_content_layout.contains(id)
+                                || self
+                                    .presentation
+                                    .pending_presentations
+                                    .get(id)
+                                    .is_some_and(|pending| pending.chrome_applied))
                     })
                 })
             });

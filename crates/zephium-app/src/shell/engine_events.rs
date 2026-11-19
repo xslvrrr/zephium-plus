@@ -420,6 +420,17 @@ impl Shell {
                     self.project_tab(id);
                 }
             }
+            EngineEvent::NativeNavigationRefused { id, embedded } => {
+                if !embedded {
+                    self.cancel_https_first_attempt(id);
+                }
+                if self.replace_page_request(
+                    id,
+                    zephium_core::item::PageRequest::NavigationRefused { embedded },
+                ) {
+                    self.project_tab(id);
+                }
+            }
             EngineEvent::ExternalAppRequested {
                 id,
                 url,
@@ -718,6 +729,7 @@ impl Shell {
                     // completion as well as through the bounded timer.
                     self.favicon_load_completed(id);
                     self.warm_spare_after_load(id);
+                    self.capture_loaded_tab_preview(id);
                 }
                 self.sync_extension_browser_surface_metadata(id);
             }
@@ -868,6 +880,7 @@ impl Shell {
             | EngineEvent::NativeTabCloseRequested { id }
             | EngineEvent::MediaReturnRequested { id }
             | EngineEvent::PageOpenBlocked { id, .. }
+            | EngineEvent::NativeNavigationRefused { id, .. }
             | EngineEvent::ExternalAppRequested { id, .. }
             | EngineEvent::HttpAuthRequested { id, .. }
             | EngineEvent::HttpAuthEnded { id, .. }

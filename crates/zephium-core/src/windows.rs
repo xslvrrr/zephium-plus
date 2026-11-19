@@ -24,6 +24,8 @@ pub struct Window {
     pub mode: Mode,
     pub size: Size,
     pub metrics: Metrics,
+    /// An admitted request to keep the hidden card raised, not native completion.
+    pub sidebar_peek: bool,
     pub active: Option<ItemId>,
     pub splits: Option<Pane>,
 }
@@ -56,6 +58,7 @@ impl Windows {
                 mode: Mode::Sidebar,
                 size,
                 metrics: Metrics::default(),
+                sidebar_peek: false,
                 active: None,
                 splits: None,
             },

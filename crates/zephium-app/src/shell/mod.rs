@@ -361,6 +361,7 @@ pub struct Shell {
     store: SharedStore,
     store_reads: Option<StoreReadQueue>,
     notes: Option<zephium_core::ports::notes::SharedNotes>,
+    profile_cleanup: Option<Arc<dyn crate::profile_cleanup::ProfileCleanup>>,
     chrome: SharedChrome,
     emit: EmitFn,
     #[cfg(test)]
@@ -368,6 +369,7 @@ pub struct Shell {
 }
 
 pub(super) struct ShellPorts {
+    profile_cleanup: Option<Arc<dyn crate::profile_cleanup::ProfileCleanup>>,
     engine: SharedEngine,
     store: SharedStore,
     blocker: SharedBlocker,
@@ -388,6 +390,7 @@ impl ShellPorts {
         emit: EmitFn,
     ) -> Self {
         Self {
+            profile_cleanup: None,
             engine,
             store,
             blocker,
@@ -397,6 +400,14 @@ impl ShellPorts {
             chrome,
             emit,
         }
+    }
+
+    pub(super) fn with_profile_cleanup(
+        mut self,
+        cleanup: Option<Arc<dyn crate::profile_cleanup::ProfileCleanup>>,
+    ) -> Self {
+        self.profile_cleanup = cleanup;
+        self
     }
 
     #[cfg(feature = "agentic-browser")]
@@ -502,6 +513,7 @@ impl Shell {
         #[cfg(test)] auto_settle_content_rules: bool,
     ) -> Self {
         let ShellPorts {
+            profile_cleanup,
             engine,
             store,
             blocker,
@@ -625,6 +637,7 @@ impl Shell {
             store,
             store_reads: store_reads.into(),
             notes: None,
+            profile_cleanup,
             chrome,
             emit,
             #[cfg(test)]
@@ -873,6 +886,9 @@ impl Shell {
                 profile,
                 extension_id,
             } => {
+                #[cfg(target_os = "windows")]
+                self.open_web_extension_options(profile, extension_id);
+                #[cfg(not(target_os = "windows"))]
                 let _ = self
                     .engine
                     .open_web_extension_options(profile, extension_id);
@@ -1005,6 +1021,7 @@ impl Shell {
             Command::SetWindowSize(size) => match self.windows.focused_mut() {
                 Some(win) => {
                     win.size = size;
+                    self.refresh_sidebar_peek();
                     // macOS resizes natively via autoresizing masks; Windows
                     // and Linux have no equivalent, the shell must relayout.
                     let _ = self.relayout();
@@ -1033,6 +1050,9 @@ impl Shell {
                     // use when the window minimized. The ordinary idle grace
                     // still applies after every content view becomes hidden.
                     if !visible {
+                        if self.windows.focused().is_some_and(|win| win.sidebar_peek) {
+                            self.peek_sidebar(false, false);
+                        }
                         // OS pointer capture cannot remain authoritative while
                         // its window is hidden/minimized.
                         self.drop_divider();
@@ -1055,6 +1075,7 @@ impl Shell {
                 if let Some(win) = self.windows.focused_mut() {
                     win.metrics.sidebar_width = zephium_core::layout::clamp_sidebar_width(width);
                 }
+                self.refresh_sidebar_peek();
                 if animate {
                     if let Some(win) = self.windows.focused() {
                         let _ = self.engine.hint_stage_motion(win.id, StageMotion::Slide);
@@ -1073,22 +1094,12 @@ impl Shell {
                 let id = win.id;
                 // A visibility change ends the peek even if the old chrome
                 // document never delivers its delayed lowering.
-                let card = layout::hidden_card(win.size, win.metrics);
-                let _ = self.engine.raise_chrome(id, false, card, false);
+                self.peek_sidebar(false, false);
                 let _ = self.engine.hint_stage_motion(id, StageMotion::Slide);
                 let _ = self.relayout_with(true);
             }
             Command::PeekSidebar { peek, slide } => {
-                if let Some(win) = self.windows.focused() {
-                    // Only a hidden sidebar is beneath the page to come over it.
-                    // rice fork: spanning, the chrome beneath the page is the
-                    // whole window, so raising it would take every click on
-                    // the page; the frame claims the card as a region instead.
-                    if (!peek || win.metrics.sidebar_hidden) && !win.metrics.spans {
-                        let card = layout::hidden_card(win.size, win.metrics);
-                        let _ = self.engine.raise_chrome(win.id, peek, card, slide);
-                    }
-                }
+                self.peek_sidebar(peek, slide);
             }
             Command::ChromeRegions(regions) => {
                 if let Some(win) = self.windows.focused() {
@@ -1121,6 +1132,19 @@ impl Shell {
             Command::SidebarResizeGuide(width) => {
                 if let Some(win) = self.windows.focused() {
                     let zone = width.filter(|width| width.is_finite()).map(|width| {
+                        // A hidden sidebar is resized from the card's edge.
+                        if win.metrics.sidebar_hidden {
+                            let mut metrics = win.metrics;
+                            metrics.sidebar_width =
+                                zephium_core::layout::clamp_sidebar_width(width);
+                            let card = layout::hidden_card(win.size, metrics);
+                            return Rect::new(
+                                (card.x + card.width - 2.0).max(card.x),
+                                card.y,
+                                2.0,
+                                card.height,
+                            );
+                        }
                         let padding = win.metrics.padding;
                         let x = (padding + zephium_core::layout::clamp_sidebar_width(width) - 2.0)
                             .min((win.size.width - padding - 2.0).max(padding));
@@ -1898,6 +1922,9 @@ impl Shell {
     }
 
     fn shutdown_until(&mut self, deadline: std::time::Instant, ack: SyncSender<ShutdownOutcome>) {
+        for window in self.windows.iter_mut() {
+            window.sidebar_peek = false;
+        }
         // Reserve the last quarter of the remaining budget for native teardown.
         let now = std::time::Instant::now();
         let storage_deadline = deadline - deadline.saturating_duration_since(now) / 4;

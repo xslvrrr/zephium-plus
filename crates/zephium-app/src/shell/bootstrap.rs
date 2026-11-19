@@ -26,8 +26,7 @@ impl Shell {
             // so the chrome goes back beneath the page and takes its whole
             // view again.
             let _ = self.engine.set_chrome_regions(win.id, Vec::new());
-            let card = layout::hidden_card(win.size, win.metrics);
-            let _ = self.engine.raise_chrome(win.id, false, card, false);
+            self.peek_sidebar(false, false);
             let _ = self.relayout();
             self.forget_delivered_icons(zephium_ipc::IconSurface::Chrome);
             self.forget_offered_items();

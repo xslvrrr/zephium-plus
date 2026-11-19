@@ -103,11 +103,11 @@ export const commands = {
 	 *  Opens the microphone and starts a take. On first use this waits while
 	 *  the system asks for permission.
 	 */
-	voiceStart: () => __TAURI_INVOKE<VoiceStartV1>("voice_start"),
+	voiceStart: (request: string) => __TAURI_INVOKE<VoiceStartV1>("voice_start", { request }),
 	/**  Stops listening; the words arrive as a `done` change. */
 	voiceStop: (take: number) => __TAURI_INVOKE<boolean>("voice_stop", { take }),
-	/**  Discards the current take, whatever its phase. */
-	voiceCancel: () => __TAURI_INVOKE<boolean>("voice_cancel"),
+	/**  Discards only this start request's take, whatever its phase. */
+	voiceCancel: (request: string, take: number | null) => __TAURI_INVOKE<boolean>("voice_cancel", { request, take }),
 	/**
 	 *  Opens the system's privacy settings for the microphone or speech
 	 *  recognition, after the person declined one.
@@ -524,13 +524,14 @@ export const commands = {
 } | null>("launcher_set_double_tap", { mode }),
 	launcherOpenAccessibility: () => __TAURI_INVOKE<void>("launcher_open_accessibility"),
 	settingGet: (key: string) => __TAURI_INVOKE<string | null>("setting_get", { key }),
-	searchShortcutDefaults: () => __TAURI_INVOKE<SearchShortcut[]>("search_shortcut_defaults"),
+	searchShortcutDefaults: () => __TAURI_INVOKE<SearchShortcut_Serialize[]>("search_shortcut_defaults"),
 	settingSet: (key: string, value: string) => __TAURI_INVOKE<OperationAdmission>("setting_set", { key, value }),
 	windowsDiagnosticsSettings: () => __TAURI_INVOKE<boolean>("windows_diagnostics_settings"),
 	/**  None identifies a local launch-read fallback to ON, separate from Windows policy. */
 	windowsReputationManaged: () => __TAURI_INVOKE<boolean | null>("windows_reputation_managed"),
 	uiInfo: () => __TAURI_INVOKE<UiInfo>("ui_info"),
 	uiReady: () => __TAURI_INVOKE<boolean>("ui_ready"),
+	captionReplay: () => __TAURI_INVOKE<void>("caption_replay"),
 	menuPopup: (x: number | null, y: number | null) => __TAURI_INVOKE<boolean>("menu_popup", { x, y }),
 	addMenuPopup: (x: number | null, y: number | null, canSplit: boolean) => __TAURI_INVOKE<boolean>("add_menu_popup", { x, y, canSplit }),
 	tabMenuPopup: (id: string, x: number | null, y: number | null, context: TabMenuContext) => __TAURI_INVOKE<boolean>("tab_menu_popup", { id, x, y, context }),
@@ -2309,6 +2310,8 @@ export type PageAssistFaultV1 = { reason: "ai_off" } | { reason: "private" } | {
 { reason: "step_failed" } |
 /**  The reply reached its limit of steps or time. */
 { reason: "too_long" } |
+/**  The model stopped making progress or exceeded the call's overall cap. */
+{ reason: "timed_out" } |
 /**
  *  The model call failed. `retry_after_ms` is set for `rate_limited`
  *  (and hosted limits) when the provider or server said when to retry.
@@ -2581,6 +2584,8 @@ export type PageRequestView =
  *  allow that site's pop-ups.
  */
 { kind: "popup"; host: string | null; site: string | null } |
+/**  The native address was unreadable or too long. Dismissal only. */
+{ kind: "navigation_refused"; embedded: boolean } |
 /**
  *  The site, or its proxy, asks to sign in. Never carries the server's
  *  own text.
@@ -3135,7 +3140,9 @@ export type SearchResults = {
 	results: SearchResult[],
 };
 
-export type SearchShortcut = {
+export type SearchShortcut = SearchShortcut_Serialize | SearchShortcut_Deserialize;
+
+export type SearchShortcut_Deserialize = {
 	id: string,
 	name: string,
 	keywords: string[],
@@ -3143,6 +3150,17 @@ export type SearchShortcut = {
 	home_url: string,
 	domain: string,
 	suggestions: SearchEngine | null,
+	enabled: boolean,
+};
+
+export type SearchShortcut_Serialize = {
+	id: string,
+	name: string,
+	keywords: string[],
+	search_url: string,
+	home_url: string,
+	domain: string,
+	suggestions?: SearchEngine | null,
 	enabled: boolean,
 };
 
@@ -3636,6 +3654,7 @@ export type UpdateStatus_Serialize = ({ state: "unavailable" }) & { retry_reason
 /**  A take moved on. `text` is set once, when it is done. */
 export type VoiceChanged = {
 	take: number,
+	request: string,
 	phase: VoicePhaseV1,
 	engine: VoiceEngineV1 | null,
 	/**  The words so far, while listening, when the engine streams them. */
@@ -3678,6 +3697,7 @@ export type VoiceFaultV1 = "microphone_denied" | "recognition_denied" | "no_micr
  */
 export type VoiceLevels = {
 	take: number,
+	request: string,
 	levels: number[],
 };
 
@@ -4667,6 +4687,13 @@ export type WorkComparisonAlternative = {
 	values: string[],
 };
 
+export type WorkComposerDraft = {
+	profile: ProfileId,
+	space: SpaceId,
+	revision: WorkRevision,
+	text: string,
+};
+
 export type WorkConfidence = "supported" | "inferred" | "unverified" | "contradicted";
 
 /**  What a held step would commit. */
@@ -5146,17 +5173,17 @@ export type WorkElementPlacement_Serialize = {
 
 export type WorkEnvironmentCall = WorkEnvironmentCall_Serialize | WorkEnvironmentCall_Deserialize;
 
-export type WorkEnvironmentCall_Deserialize =
+export type WorkEnvironmentCall_Deserialize = ({ kind: "composer_read"; space: SpaceId }) & { after?: never; command?: never; expected?: never; id?: never; intent?: never; limit?: never; text?: never; view?: never } | ({ kind: "composer_save"; space: SpaceId; expected: WorkRevision; text: string }) & { after?: never; command?: never; id?: never; intent?: never; limit?: never; view?: never } |
 /**  Revision-scoped presentation save; stale identities never execute again. */
-({ kind: "checkpoint"; id: WorkEnvironmentId; expected: WorkRevision; view: WorkEnvironmentView_Deserialize }) & { after?: never; command?: never; intent?: never; limit?: never; space?: never } |
+({ kind: "checkpoint"; id: WorkEnvironmentId; expected: WorkRevision; view: WorkEnvironmentView_Deserialize }) & { after?: never; command?: never; intent?: never; limit?: never; space?: never; text?: never } |
 /**  Idempotent user selection; updates only the Space's last-opened Work. */
-({ kind: "open"; id: WorkEnvironmentId }) & { after?: never; command?: never; expected?: never; intent?: never; limit?: never; space?: never; view?: never } | ({ kind: "read"; id: WorkEnvironmentId }) & { after?: never; command?: never; expected?: never; intent?: never; limit?: never; space?: never; view?: never } | ({ kind: "list"; space: SpaceId; after: WorkEnvironmentId | null; limit: number }) & { command?: never; expected?: never; id?: never; intent?: never; view?: never } | ({ kind: "command"; command: WorkCommandId; intent: WorkEnvironmentIntent }) & { after?: never; expected?: never; id?: never; limit?: never; space?: never; view?: never };
+({ kind: "open"; id: WorkEnvironmentId }) & { after?: never; command?: never; expected?: never; intent?: never; limit?: never; space?: never; text?: never; view?: never } | ({ kind: "read"; id: WorkEnvironmentId }) & { after?: never; command?: never; expected?: never; intent?: never; limit?: never; space?: never; text?: never; view?: never } | ({ kind: "list"; space: SpaceId; after: WorkEnvironmentId | null; limit: number }) & { command?: never; expected?: never; id?: never; intent?: never; text?: never; view?: never } | ({ kind: "command"; command: WorkCommandId; intent: WorkEnvironmentIntent }) & { after?: never; expected?: never; id?: never; limit?: never; space?: never; text?: never; view?: never };
 
-export type WorkEnvironmentCall_Serialize =
+export type WorkEnvironmentCall_Serialize = ({ kind: "composer_read"; space: SpaceId }) & { after?: never; command?: never; expected?: never; id?: never; intent?: never; limit?: never; text?: never; view?: never } | ({ kind: "composer_save"; space: SpaceId; expected: WorkRevision; text: string }) & { after?: never; command?: never; id?: never; intent?: never; limit?: never; view?: never } |
 /**  Revision-scoped presentation save; stale identities never execute again. */
-({ kind: "checkpoint"; id: WorkEnvironmentId; expected: WorkRevision; view: WorkEnvironmentView_Serialize }) & { after?: never; command?: never; intent?: never; limit?: never; space?: never } |
+({ kind: "checkpoint"; id: WorkEnvironmentId; expected: WorkRevision; view: WorkEnvironmentView_Serialize }) & { after?: never; command?: never; intent?: never; limit?: never; space?: never; text?: never } |
 /**  Idempotent user selection; updates only the Space's last-opened Work. */
-({ kind: "open"; id: WorkEnvironmentId }) & { after?: never; command?: never; expected?: never; intent?: never; limit?: never; space?: never; view?: never } | ({ kind: "read"; id: WorkEnvironmentId }) & { after?: never; command?: never; expected?: never; intent?: never; limit?: never; space?: never; view?: never } | ({ kind: "list"; space: SpaceId; after: WorkEnvironmentId | null; limit: number }) & { command?: never; expected?: never; id?: never; intent?: never; view?: never } | ({ kind: "command"; command: WorkCommandId; intent: WorkEnvironmentIntent }) & { after?: never; expected?: never; id?: never; limit?: never; space?: never; view?: never };
+({ kind: "open"; id: WorkEnvironmentId }) & { after?: never; command?: never; expected?: never; intent?: never; limit?: never; space?: never; text?: never; view?: never } | ({ kind: "read"; id: WorkEnvironmentId }) & { after?: never; command?: never; expected?: never; intent?: never; limit?: never; space?: never; text?: never; view?: never } | ({ kind: "list"; space: SpaceId; after: WorkEnvironmentId | null; limit: number }) & { command?: never; expected?: never; id?: never; intent?: never; text?: never; view?: never } | ({ kind: "command"; command: WorkCommandId; intent: WorkEnvironmentIntent }) & { after?: never; expected?: never; id?: never; limit?: never; space?: never; text?: never; view?: never };
 
 export type WorkEnvironmentChanged = WorkEnvironmentChangedV1;
 
@@ -5214,9 +5241,9 @@ export type WorkEnvironmentReference = { kind: "browser"; tab: ItemId } | { kind
 
 export type WorkEnvironmentReply = WorkEnvironmentReply_Serialize | WorkEnvironmentReply_Deserialize;
 
-export type WorkEnvironmentReply_Deserialize = ({ kind: "checkpointed"; expected: WorkRevision; applied_view_revision: WorkRevision; replayed: boolean; snapshot: WorkEnvironmentSnapshot_Deserialize }) & { applied_revision?: never; command?: never; next?: never; selected?: never; works?: never } | ({ kind: "snapshot"; snapshot: WorkEnvironmentSnapshot_Deserialize }) & { applied_revision?: never; applied_view_revision?: never; command?: never; expected?: never; next?: never; replayed?: never; selected?: never; works?: never } | ({ kind: "applied"; command: WorkCommandId; applied_revision: WorkRevision; applied_view_revision: WorkRevision; replayed: boolean; snapshot: WorkEnvironmentSnapshot_Deserialize }) & { expected?: never; next?: never; selected?: never; works?: never } | ({ kind: "page"; works: WorkEnvironmentSummary[]; next: WorkEnvironmentId | null; selected: WorkEnvironmentId | null }) & { applied_revision?: never; applied_view_revision?: never; command?: never; expected?: never; replayed?: never; snapshot?: never };
+export type WorkEnvironmentReply_Deserialize = ({ kind: "composer"; draft: WorkComposerDraft }) & { applied_revision?: never; applied_view_revision?: never; command?: never; expected?: never; next?: never; replayed?: never; selected?: never; snapshot?: never; works?: never } | ({ kind: "checkpointed"; expected: WorkRevision; applied_view_revision: WorkRevision; replayed: boolean; snapshot: WorkEnvironmentSnapshot_Deserialize }) & { applied_revision?: never; command?: never; draft?: never; next?: never; selected?: never; works?: never } | ({ kind: "snapshot"; snapshot: WorkEnvironmentSnapshot_Deserialize }) & { applied_revision?: never; applied_view_revision?: never; command?: never; draft?: never; expected?: never; next?: never; replayed?: never; selected?: never; works?: never } | ({ kind: "applied"; command: WorkCommandId; applied_revision: WorkRevision; applied_view_revision: WorkRevision; replayed: boolean; snapshot: WorkEnvironmentSnapshot_Deserialize }) & { draft?: never; expected?: never; next?: never; selected?: never; works?: never } | ({ kind: "page"; works: WorkEnvironmentSummary[]; next: WorkEnvironmentId | null; selected: WorkEnvironmentId | null }) & { applied_revision?: never; applied_view_revision?: never; command?: never; draft?: never; expected?: never; replayed?: never; snapshot?: never };
 
-export type WorkEnvironmentReply_Serialize = ({ kind: "checkpointed"; expected: WorkRevision; applied_view_revision: WorkRevision; replayed: boolean; snapshot: WorkEnvironmentSnapshot_Serialize }) & { applied_revision?: never; command?: never; next?: never; selected?: never; works?: never } | ({ kind: "snapshot"; snapshot: WorkEnvironmentSnapshot_Serialize }) & { applied_revision?: never; applied_view_revision?: never; command?: never; expected?: never; next?: never; replayed?: never; selected?: never; works?: never } | ({ kind: "applied"; command: WorkCommandId; applied_revision: WorkRevision; applied_view_revision: WorkRevision; replayed: boolean; snapshot: WorkEnvironmentSnapshot_Serialize }) & { expected?: never; next?: never; selected?: never; works?: never } | ({ kind: "page"; works: WorkEnvironmentSummary[]; next: WorkEnvironmentId | null; selected: WorkEnvironmentId | null }) & { applied_revision?: never; applied_view_revision?: never; command?: never; expected?: never; replayed?: never; snapshot?: never };
+export type WorkEnvironmentReply_Serialize = ({ kind: "composer"; draft: WorkComposerDraft }) & { applied_revision?: never; applied_view_revision?: never; command?: never; expected?: never; next?: never; replayed?: never; selected?: never; snapshot?: never; works?: never } | ({ kind: "checkpointed"; expected: WorkRevision; applied_view_revision: WorkRevision; replayed: boolean; snapshot: WorkEnvironmentSnapshot_Serialize }) & { applied_revision?: never; command?: never; draft?: never; next?: never; selected?: never; works?: never } | ({ kind: "snapshot"; snapshot: WorkEnvironmentSnapshot_Serialize }) & { applied_revision?: never; applied_view_revision?: never; command?: never; draft?: never; expected?: never; next?: never; replayed?: never; selected?: never; works?: never } | ({ kind: "applied"; command: WorkCommandId; applied_revision: WorkRevision; applied_view_revision: WorkRevision; replayed: boolean; snapshot: WorkEnvironmentSnapshot_Serialize }) & { draft?: never; expected?: never; next?: never; selected?: never; works?: never } | ({ kind: "page"; works: WorkEnvironmentSummary[]; next: WorkEnvironmentId | null; selected: WorkEnvironmentId | null }) & { applied_revision?: never; applied_view_revision?: never; command?: never; draft?: never; expected?: never; replayed?: never; snapshot?: never };
 
 export type WorkEnvironmentSnapshot = WorkEnvironmentSnapshot_Serialize | WorkEnvironmentSnapshot_Deserialize;
 
