@@ -138,7 +138,7 @@ zephium-agent-provider-transport = { workspace = true, optional = true }
 zephium-engine.workspace = true
 zephium-store.workspace = true
 zephium-notes.workspace = true
-notify = { version = "=8.2.1", default-features = false, features = ["macos_fsevent"] }
+notify = { version = "=8.2.2", default-features = false, features = ["macos_fsevent"] }
 sha2 = "=0.10.9"
 zephium-import.workspace = true
 zephium-blocker-service = { workspace = true, features = ["official-https"] }
